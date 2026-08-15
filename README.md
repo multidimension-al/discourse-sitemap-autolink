@@ -23,7 +23,10 @@ removes them cleanly.
 - **Ingestion** is a daily scheduled job that fetches the configured
   sitemaps (sitemap **indexes are expanded automatically**), diffs
   against the stored catalog by URL + `lastmod`, fetches pages for
-  titles **only** for new/changed URLs, regenerates matching phrases,
+  titles **only** for new/changed URLs — spaced by
+  `sitemap_autolink_page_fetch_delay_ms` so a first import doesn't
+  read as a scraping burst to the source site's firewall —
+  regenerates matching phrases,
   and optionally enqueues **one** bounded, batched rebake job for the
   posts the changes likely affect (never one job per phrase, and never
   at all when the change set is catalog-scale — see
@@ -138,6 +141,7 @@ Nothing here is a black box — every stage has a visible surface:
 | `sitemap_autolink_excluded_url_patterns` | – | never ingest matching sitemap URLs (substring or `*` wildcard, e.g. `*/checkout*`) |
 | `sitemap_autolink_excluded_terms` | – | never auto-generate these phrases |
 | `sitemap_autolink_sync_enabled` | off | daily sitemap → catalog job |
+| `sitemap_autolink_page_fetch_delay_ms` | 500 | politeness pause between title fetches |
 | `sitemap_autolink_auto_rebake_on_changes` | off | one batched rebake job after each sync |
 | `sitemap_autolink_auto_rebake_max_phrases` | 50 | skip auto-rebake when a sync changes more phrases than this (initial imports never mass-rebake) |
 | `sitemap_autolink_auto_rebake_max_posts` | 500 | total posts one sync's rebake wave may touch |

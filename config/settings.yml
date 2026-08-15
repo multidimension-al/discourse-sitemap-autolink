@@ -53,6 +53,10 @@ plugins:
     list_type: compact
   sitemap_autolink_sync_enabled:
     default: false
+  sitemap_autolink_page_fetch_delay_ms:
+    default: 500
+    min: 0
+    max: 30000
   sitemap_autolink_auto_rebake_on_changes:
     default: false
   sitemap_autolink_auto_rebake_max_phrases:

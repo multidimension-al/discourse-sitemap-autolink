@@ -22,6 +22,7 @@ RSpec.describe SitemapAutolink::SitemapSync do
     described_class.new(
       sources: sources,
       title_suffixes: title_suffixes,
+      page_fetch_delay_ms: 0,
       http_get: ->(url, _max) { responses[url] },
     )
   end
@@ -52,6 +53,7 @@ RSpec.describe SitemapAutolink::SitemapSync do
       described_class.new(
         sources: [{ url: "#{base}/sitemap.xml", type: "product" }],
         title_suffixes: [],
+        page_fetch_delay_ms: 0,
         http_get: ->(url, _max) { responses[url] },
       )
     report = sync.run!
@@ -80,6 +82,7 @@ RSpec.describe SitemapAutolink::SitemapSync do
       described_class.new(
         sources: sources,
         title_suffixes: [],
+        page_fetch_delay_ms: 0,
         http_get: ->(url, _max) do
           fetches << url
           responses[url]
@@ -180,6 +183,7 @@ RSpec.describe SitemapAutolink::SitemapSync do
         sources: sources,
         title_suffixes: [],
         excluded_url_patterns: ["*/checkout*"],
+        page_fetch_delay_ms: 0,
         http_get: ->(url, _max) { responses[url] },
       )
     report = sync.run!
@@ -199,6 +203,7 @@ RSpec.describe SitemapAutolink::SitemapSync do
         sources: sources,
         title_suffixes: [],
         excluded_url_patterns: ["*/checkout*"],
+        page_fetch_delay_ms: 0,
         http_get: ->(url, _max) { responses[url] },
       )
     result = sync.preview(limit_per_source: 5)
@@ -210,6 +215,24 @@ RSpec.describe SitemapAutolink::SitemapSync do
     page = source[:sampled].first
     expect(page[:title]).to eq("Widget Frame Kit")
     expect(page[:phrases].map { |p| p[:phrase] }).to include("Widget Frame Kit")
+  end
+
+  it "spaces page fetches by the configured politeness delay" do
+    responses = {
+      "#{base}/sitemap-products.xml" =>
+        sitemap_xml([["/shop/widget-alpha", nil], ["/shop/widget-beta", nil]]),
+      "#{base}/shop/widget-alpha" => page_html("Widget Alpha Kit"),
+      "#{base}/shop/widget-beta" => page_html("Widget Beta Kit"),
+    }
+    sync =
+      described_class.new(
+        sources: sources,
+        title_suffixes: [],
+        page_fetch_delay_ms: 50,
+        http_get: ->(url, _max) { responses[url] },
+      )
+    expect(sync).to receive(:sleep).with(0.05).twice
+    sync.run!
   end
 
   it "does not mark entries removed when a sitemap fetch errored" do

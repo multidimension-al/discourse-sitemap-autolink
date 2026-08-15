@@ -23,12 +23,14 @@ module SitemapAutolink
     # title_suffixes: strings stripped from the end of page titles.
     # excluded_url_patterns: see UrlFilter (substring or * wildcard).
     # user_agent: override the identifying UA if a site's WAF needs it.
+    # page_fetch_delay_ms: politeness pause between page (title) fetches.
     # http_get: injectable ->(url, max_bytes) { body_string_or_nil } for tests.
     def initialize(
       sources: nil,
       title_suffixes: nil,
       excluded_url_patterns: nil,
       user_agent: nil,
+      page_fetch_delay_ms: nil,
       http_get: nil
     )
       @sources = sources || parse_sources(SiteSetting.sitemap_autolink_sources)
@@ -53,6 +55,11 @@ module SitemapAutolink
             ),
         )
       @user_agent = user_agent || USER_AGENT
+      @page_fetch_delay =
+        (
+          page_fetch_delay_ms ||
+            (defined?(SiteSetting) ? SiteSetting.sitemap_autolink_page_fetch_delay_ms : 0)
+        ).to_i / 1000.0
       @http_get = http_get || method(:default_http_get)
       @report = {
         seen: 0,
@@ -174,7 +181,7 @@ module SitemapAutolink
       entry = SitemapAutolinkEntry.find_by(url: url)
 
       if entry.nil?
-        title, title_source = resolve_title(url)
+        title, title_source = throttled_resolve_title(url)
         entry =
           SitemapAutolinkEntry.create!(
             url: url,
@@ -208,7 +215,7 @@ module SitemapAutolink
       changed = lastmod.present? && lastmod != entry.lastmod
       slug_title = entry.title_source == "slug"
       if changed || slug_title
-        title, title_source = resolve_title(url)
+        title, title_source = throttled_resolve_title(url)
         if title_source == "page" && title != entry.title
           entry.update!(
             title: title,
@@ -284,6 +291,16 @@ module SitemapAutolink
       return body if body.nil?
       return body if body.encoding == Encoding::UTF_8 && body.valid_encoding?
       body.dup.force_encoding(Encoding::UTF_8).scrub("")
+    end
+
+    # Politeness spacing for the per-page title fetches during a real
+    # sync: without it, a first import of hundreds/thousands of URLs is
+    # a request burst that firewalls read as scraping (and may answer by
+    # banning the forum's IP). Sitemap fetches and dry-run previews
+    # (bounded samples) are not delayed.
+    def throttled_resolve_title(url)
+      sleep(@page_fetch_delay) if @page_fetch_delay.positive?
+      resolve_title(url)
     end
 
     def resolve_title(url)
