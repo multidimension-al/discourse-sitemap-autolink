@@ -1,3 +1,9 @@
+> **Note:** this design document predates the repo becoming plugin-only.
+> The theme component and tools/catalog generator it references were
+> removed from the tip and live at the git tag `theme-component-archive`;
+> the plugin at the repository root implements the same architecture
+> server-side.
+
 # GBFans internal-linking system — content sources & catalog design
 
 Phase 2 deliverable: what the GBFans.com application actually exposes, which
