@@ -137,7 +137,7 @@ Nothing here is a black box — every stage has a visible surface:
 | `sitemap_autolink_type_priority` | manual | collision priority order, strongest first |
 | `sitemap_autolink_min_phrase_length` / `_min_phrase_words` | 5 / 2 | review gates for generated phrases |
 | `sitemap_autolink_generate_plurals` | on | simple plural variants |
-| `sitemap_autolink_title_suffixes` | – | strip site boilerplate from fetched titles |
+| `sitemap_autolink_title_suffixes` | – | strip site boilerplate from titles (re-applied to stored titles each sync) |
 | `sitemap_autolink_excluded_url_patterns` | – | never ingest matching sitemap URLs (substring or `*` wildcard, e.g. `*/checkout*`) |
 | `sitemap_autolink_excluded_terms` | – | never auto-generate these phrases |
 | `sitemap_autolink_sync_enabled` | off | daily sitemap → catalog job |

@@ -104,6 +104,8 @@ module SitemapAutolink
         end
       end
 
+      reclean_titles
+
       begin
         mark_removed(seen_urls, now) if @report[:errors].empty?
       rescue => e
@@ -316,13 +318,39 @@ module SitemapAutolink
           html[/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i, 1] ||
           html[%r{<title[^>]*>([^<]+)</title>}i, 1]
       return nil if raw.nil?
-      title = CGI.unescapeHTML(raw).strip
+      clean_title(CGI.unescapeHTML(raw))
+    end
+
+    # Shared title hygiene: drop backslash-escaping of quotes leaking
+    # from the source CMS (PHP addslashes artifacts like "Mattel\'s"),
+    # then strip the configured suffixes repeatedly.
+    def clean_title(raw)
+      return nil if raw.nil?
+      title = raw.gsub(/\\+(['"])/, '\1').strip
       loop do
         stripped = @title_suffixes.find { |s| s.present? && title.downcase.end_with?(s.downcase) }
         break if stripped.nil?
         title = title[0, title.length - stripped.length].strip
       end
       title.presence
+    end
+
+    # Title hygiene is settings-driven, so re-apply it to STORED titles
+    # on every run (no page fetches): a suffix pattern configured after
+    # entries were ingested would otherwise stay baked into their titles
+    # (and phrases) until the page's lastmod happened to change.
+    def reclean_titles
+      SitemapAutolinkEntry
+        .where(auto_discovered: true, removed_from_source: false)
+        .find_each do |entry|
+          cleaned = clean_title(entry.title)
+          next if cleaned.blank? || cleaned == entry.title
+          entry.update!(title: cleaned)
+          regenerate_terms(entry)
+          @report[:title_changed] << entry.url
+        end
+    rescue => e
+      @report[:errors] << "reclean_titles: #{e.class} #{e.message}"
     end
 
     def title_from_slug(url)

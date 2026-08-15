@@ -217,6 +217,44 @@ RSpec.describe SitemapAutolink::SitemapSync do
     expect(page[:phrases].map { |p| p[:phrase] }).to include("Widget Frame Kit")
   end
 
+  it "unescapes backslash-escaped quotes leaking from the source CMS" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/mattels-figure", nil]]),
+      "#{base}/shop/mattels-figure" => page_html("Mattel\\'s 12-Inch Figure"),
+    }
+    build_sync(responses).run!
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/shop/mattels-figure")
+    expect(entry.title).to eq("Mattel's 12-Inch Figure")
+  end
+
+  it "re-applies newly configured suffixes to stored titles without refetching pages" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", "2026-08-01"]]),
+      "#{base}/shop/widget" => page_html("Widget Kit - Example Wiki | Example.com"),
+    }
+    build_sync(responses).run!
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget")
+    expect(entry.title).to eq("Widget Kit - Example Wiki | Example.com")
+
+    fetches = []
+    sync =
+      described_class.new(
+        sources: sources,
+        title_suffixes: [" - Example Wiki", " | Example.com"],
+        page_fetch_delay_ms: 0,
+        http_get: ->(url, _max) do
+          fetches << url
+          responses[url]
+        end,
+      )
+    report = sync.run!
+
+    expect(entry.reload.title).to eq("Widget Kit")
+    expect(entry.terms.linkable.pluck(:normalized_phrase)).to include("widget kit")
+    expect(report[:title_changed]).to include("#{base}/shop/widget")
+    expect(fetches).to eq(["#{base}/sitemap-products.xml"])
+  end
+
   it "spaces page fetches by the configured politeness delay" do
     responses = {
       "#{base}/sitemap-products.xml" =>
