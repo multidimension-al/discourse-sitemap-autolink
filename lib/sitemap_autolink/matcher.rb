@@ -2,7 +2,7 @@
 
 require "set"
 
-module GbfansAutolink
+module SitemapAutolink
   # Aho-Corasick multi-pattern matcher plus the deterministic match policy.
   #
   # Dependency-free on purpose: it can be exercised and benchmarked with
@@ -12,17 +12,15 @@ module GbfansAutolink
   # priority) and applies the per-post frequency limits.
   #
   # Rules are plain hashes:
-  #   { phrase: "elbow pads",           # already normalized (see .normalize)
-  #     url: "/shop/grey-elbow-pads",   # destination (also the limit key)
+  #   { phrase: "widget frame kit",     # already normalized (see .normalize)
+  #     url: "https://example.com/shop/widget-frame-kit",
   #     type: "product",
   #     priority: 1 }                   # lower wins ties
   class Matcher
-    # Characters treated as word boundaries — the same set the
-    # discourse-linkify-words theme component uses, so behavior stays
-    # consistent during the migration.
+    # Characters treated as word boundaries.
     BOUNDARY_CHARS =
       [
-        " ", "\t", "\n", "\r", " ",
+        " ", "\t", "\n", "\r", " ",
         ":", ".", ";", ",", "!", "?", "…",
         "(", ")", "[", "]", "{", "}",
         "\"", "„", "“", "”", "«", "»",
@@ -39,7 +37,7 @@ module GbfansAutolink
     # per-character downcasing, keeping any character whose downcase is
     # not a single character.
     def self.normalize(text)
-      folded = text.tr("’‘ ", "'' ")
+      folded = text.tr("’‘ ", "'' ")
       down = folded.downcase
       return down if down.length == folded.length
 

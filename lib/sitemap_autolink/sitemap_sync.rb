@@ -3,28 +3,34 @@
 require "net/http"
 require "uri"
 
-module GbfansAutolink
-  # Daily catalog synchronization: fetch the configured child sitemaps,
-  # diff against the stored entries, resolve titles for new/changed URLs
-  # (title fetches happen HERE, never during post cooking), regenerate
-  # terms, and report what changed so selective rebakes can be enqueued.
+module SitemapAutolink
+  # Periodic catalog synchronization: fetch the configured sitemaps
+  # (sitemap indexes are expanded automatically), diff against the stored
+  # entries, resolve titles for new/changed URLs (title fetches happen
+  # HERE, never during post cooking), regenerate terms, and report what
+  # changed so selective rebakes can be enqueued.
   class SitemapSync
-    USER_AGENT = "GBFansAutolinkBot/0.1 (Discourse plugin catalog sync)"
+    USER_AGENT = "discourse-sitemap-autolink/0.2 (catalog sync)"
     MAX_TITLE_BYTES = 524_288
-    TITLE_SUFFIXES = [
-      " - GBFans.com Wiki | GBFans.com",
-      " - GBFans.com Wiki",
-      " - GBFans.com Shop",
-      " | GBFans.com",
-      " - GBFans.com",
-    ].freeze
+    MAX_INDEX_CHILDREN = 100
 
     attr_reader :report
 
+    # sources: [{ url:, type: }]; defaults to the site setting
+    #   ("https://example.com/sitemap-products.xml,products|…").
+    # title_suffixes: strings stripped from the end of page titles.
     # http_get: injectable ->(url, max_bytes) { body_string_or_nil } for tests.
-    def initialize(base_url: nil, sources: nil, http_get: nil)
-      @base_url = (base_url || SiteSetting.gbfans_autolink_sitemap_base_url).chomp("/")
-      @sources = sources || parse_sources(SiteSetting.gbfans_autolink_sources)
+    def initialize(sources: nil, title_suffixes: nil, http_get: nil)
+      @sources = sources || parse_sources(SiteSetting.sitemap_autolink_sources)
+      @title_suffixes =
+        title_suffixes ||
+          (
+            if defined?(SiteSetting)
+              SiteSetting.sitemap_autolink_title_suffixes.split("|").map(&:strip)
+            else
+              []
+            end
+          )
       @http_get = http_get || method(:default_http_get)
       @report = {
         seen: 0,
@@ -43,13 +49,13 @@ module GbfansAutolink
       seen_urls = Set.new
 
       @sources.each do |source|
-        xml = @http_get.call(@base_url + source[:path], MAX_TITLE_BYTES * 4)
-        if xml.nil?
-          @report[:errors] << "failed to fetch sitemap #{source[:path]}"
+        entries = fetch_sitemap_entries(source[:url])
+        if entries.nil?
+          @report[:errors] << "failed to fetch sitemap #{source[:url]}"
           next
         end
-        parse_sitemap(xml).each do |loc, lastmod|
-          url = GbfansAutolinkEntry.normalize_url(loc.sub(@base_url, ""))
+        entries.each do |loc, lastmod|
+          url = SitemapAutolinkEntry.normalize_url(loc)
           next if url.empty? || seen_urls.include?(url)
           seen_urls << url
           @report[:seen] += 1
@@ -62,13 +68,35 @@ module GbfansAutolink
       @report
     end
 
+    # Fetch one configured source. A <sitemapindex> is expanded into its
+    # child sitemaps (one level, same content type).
+    def fetch_sitemap_entries(url)
+      xml = @http_get.call(url, MAX_TITLE_BYTES * 4)
+      return nil if xml.nil?
+      if xml =~ /<sitemapindex[\s>]/i
+        children = parse_sitemap(xml).first(MAX_INDEX_CHILDREN)
+        entries = []
+        children.each do |child_loc, _lastmod|
+          child_xml = @http_get.call(child_loc.strip, MAX_TITLE_BYTES * 4)
+          if child_xml.nil?
+            @report[:errors] << "failed to fetch child sitemap #{child_loc}"
+            next
+          end
+          entries.concat(parse_sitemap(child_xml))
+        end
+        entries
+      else
+        parse_sitemap(xml)
+      end
+    end
+
     def sync_entry(url, lastmod, content_type, now)
-      entry = GbfansAutolinkEntry.find_by(url: url)
+      entry = SitemapAutolinkEntry.find_by(url: url)
 
       if entry.nil?
         title, title_source = resolve_title(url)
         entry =
-          GbfansAutolinkEntry.create!(
+          SitemapAutolinkEntry.create!(
             url: url,
             title: title,
             content_type: content_type,
@@ -118,7 +146,7 @@ module GbfansAutolink
     # deleted — manual state and history stay), and their phrases go in
     # the removal report so affected posts can be rebaked.
     def mark_removed(seen_urls, _now)
-      GbfansAutolinkEntry
+      SitemapAutolinkEntry
         .where(removed_from_source: false, auto_discovered: true)
         .where(source: "sitemap")
         .find_each do |entry|
@@ -136,7 +164,7 @@ module GbfansAutolink
       keep_states = %w[approved disabled]
       entry
         .terms
-        .where(origin: GbfansAutolinkTerm.origins[:generated])
+        .where(origin: SitemapAutolinkTerm.origins[:generated])
         .where.not(state: keep_states)
         .destroy_all
 
@@ -164,7 +192,7 @@ module GbfansAutolink
     end
 
     def resolve_title(url)
-      body = @http_get.call(@base_url + url, MAX_TITLE_BYTES)
+      body = @http_get.call(url, MAX_TITLE_BYTES)
       title = body && title_from_html(body)
       return [title, "page"] if title.present?
       [title_from_slug(url), "slug"]
@@ -178,7 +206,7 @@ module GbfansAutolink
       return nil if raw.nil?
       title = CGI.unescapeHTML(raw).strip
       loop do
-        stripped = TITLE_SUFFIXES.find { |s| title.downcase.end_with?(s.downcase) }
+        stripped = @title_suffixes.find { |s| s.present? && title.downcase.end_with?(s.downcase) }
         break if stripped.nil?
         title = title[0, title.length - stripped.length].strip
       end
@@ -197,7 +225,7 @@ module GbfansAutolink
 
     def parse_sitemap(xml)
       xml
-        .split(%r{</url>}i)
+        .split(%r{</url>|</sitemap>}i)
         .filter_map do |block|
           loc = block[%r{<loc>\s*([^<\s]+)\s*</loc>}i, 1]
           next if loc.nil?
@@ -209,8 +237,8 @@ module GbfansAutolink
       setting
         .split("|")
         .filter_map do |row|
-          path, type = row.split(",").map(&:strip)
-          { path: path, type: type.presence || "content" } if path.present?
+          url, type = row.split(",").map(&:strip)
+          { url: url, type: type.presence || "content" } if url.present?
         end
     end
 

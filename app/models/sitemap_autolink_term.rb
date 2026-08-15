@@ -3,8 +3,8 @@
 # One matching phrase for an entry. Generated terms flow through review
 # states; manual terms are admin-authored and always outrank generated
 # ones at match time.
-class GbfansAutolinkTerm < ActiveRecord::Base
-  belongs_to :entry, class_name: "GbfansAutolinkEntry", foreign_key: :entry_id
+class SitemapAutolinkTerm < ActiveRecord::Base
+  belongs_to :entry, class_name: "SitemapAutolinkEntry", foreign_key: :entry_id
 
   enum :state, { auto_active: 0, pending_review: 1, approved: 2, disabled: 3 }
   enum :origin, { generated: 0, manual: 1 }
@@ -19,6 +19,8 @@ class GbfansAutolinkTerm < ActiveRecord::Base
   scope :linkable, -> { where(state: %i[auto_active approved]) }
 
   before_validation do
-    self.normalized_phrase = GbfansAutolink::Matcher.normalize(phrase.to_s) if phrase.present?
+    if phrase.present?
+      self.normalized_phrase = SitemapAutolink::Matcher.normalize(phrase.to_s)
+    end
   end
 end

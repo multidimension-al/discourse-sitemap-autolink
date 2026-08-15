@@ -1,17 +1,46 @@
 # discourse-sitemap-autolink
 
-Server-side automatic internal linking for GBFans.com: posts link the
-first mention of shop products, categories and wiki articles to their
-canonical GBFans URLs, during Discourse's normal cooking/rebaking —
-`Post.raw` is never modified, `Post.cooked` gets normal reversible links.
+A Discourse plugin that automatically links the first mention of your
+site's pages in forum posts. Point it at any site's sitemaps — a shop,
+a wiki, documentation, anything with canonical URLs — and posts gain
+normal, reversible internal links during Discourse's standard post
+cooking. `Post.raw` is never modified; links live only in
+`Post.cooked`, so changing or removing a rule and rebaking updates or
+removes them cleanly.
 
-> This repository is the plugin — install it by adding the repo's git
-> URL to your Discourse `app.yml` plugin list (see Install below). The
-> earlier client-side theme-component prototype and the offline catalog
-> tooling were removed from the tip; they remain in git history
-> (last present at commit `62854a8`). Design rationale and verified
-> extension points: `docs/PLUGIN_ASSESSMENT.md` and
-> `docs/INTERNAL_LINKING.md`.
+## How it works
+
+- **Linking** happens in `on(:post_process_cooked)`: CookedPostProcessor
+  re-cooks from raw, hands the plugin a Loofah doc, the plugin inserts
+  links, and `Jobs::ProcessPost` persists the result. Create, edit,
+  `rebake!` and bulk rebakes all funnel through this hook, so disabling
+  a rule + rebaking removes its links, structurally.
+- **Matching** is one Aho–Corasick scan per post over a compiled,
+  cached ruleset (rebuilt only when the catalog changes) — never
+  per-phrase regex loops. Benchmarked with a 5,000+ phrase catalog:
+  automaton build ~120 ms (cached), ~0.7 ms per 2 KB post, full
+  parse+scan+rewrite ~1.9 ms (`ruby script/benchmark_matcher.rb`).
+- **Ingestion** is a daily scheduled job that fetches the configured
+  sitemaps (sitemap **indexes are expanded automatically**), diffs
+  against the stored catalog by URL + `lastmod`, fetches pages for
+  titles **only** for new/changed URLs, regenerates matching phrases,
+  and optionally enqueues selective rebakes. Post cooking never fetches
+  anything from the network.
+- **Safety / review**: generated phrases pass gates — minimum length,
+  minimum word count (model numbers like "Mark-2" exempt), a
+  common-English-word check, and a global excluded-terms list. Anything
+  questionable lands in a `pending_review` queue instead of linking;
+  admins approve, disable, or add aliases. Manual terms always outrank
+  generated ones, and explicit manual aliases bypass the excluded list.
+- **Priorities**: phrase collisions resolve deterministically by the
+  configurable `sitemap_autolink_type_priority` order; at match time,
+  leftmost match wins, then the longest phrase ("Deluxe Widget Kit"
+  beats "Widget Kit"), with per-destination and total per-post limits.
+- **Markup**: `<a class="sitemap-autolink sitemap-autolink-<type>"
+  data-sitemap-autolink="true" data-autolink-type="…"
+  data-autolink-term="…" data-autolink-id="…">` — canonical URLs, no
+  tracking parameters. An optional, isolated client initializer sends
+  `internal_auto_link_click` GA4 events via `gtag`/`dataLayer`.
 
 ## Install
 
@@ -32,110 +61,80 @@ hooks:
 cd /var/discourse && ./launcher rebuild app
 ```
 
-While the repository is **private**, the container must be able to clone
-it: either make the repo public, or use a fine-grained personal access
-token (Contents: read-only, this repo only) in the clone URL —
+If the repository is private, the container must be able to clone it:
+make it public, or use a fine-grained personal access token (Contents:
+read-only) in the clone URL —
 `https://<TOKEN>@github.com/ajquick/discourse-sitemap-autolink.git`.
 
-The plugin is **disabled after install** (`gbfans_autolink_enabled` is
+The plugin is **disabled after install** (`sitemap_autolink_enabled`
 off) — it does nothing until you enable it, so installing is safe.
 
-## How it works
+## Getting started
 
-- **Linking** happens in `on(:post_process_cooked)`: CookedPostProcessor
-  re-cooks from raw, hands the plugin a Loofah doc, the plugin inserts
-  links, and `Jobs::ProcessPost` persists the result. Create, edit,
-  `rebake!` and bulk rebakes all funnel through this hook, so disabling
-  a rule + rebaking removes its links, structurally.
-- **Matching** is one Aho–Corasick scan per post over a compiled,
-  cached ruleset (rebuilt only when the catalog version bumps). Measured
-  with a real 5,171-phrase GBFans catalog (in git history at commit
-  `62854a8`, theme-component era): automaton build ~120 ms (cached),
-  ~0.7 ms per 2 KB post, full parse+scan+rewrite ~1.9 ms —
-  `ruby script/benchmark_matcher.rb [catalog.json]` (synthetic phrases
-  when no catalog file is given).
-- **Ingestion** is a daily scheduled job (`gbfans_autolink_daily_sync`)
-  that fetches the configured child sitemaps, diffs against the stored
-  catalog (new/changed/removed/unchanged via URL + `lastmod`), fetches
-  pages for titles **only** for new/changed URLs, regenerates terms, and
-  optionally enqueues selective rebakes. Post cooking never fetches
-  anything.
-- **Safety**: generated terms pass gates (min length, generic-word list,
-  single-word wiki holdback with letter+digit exception, global excluded
-  terms). Anything questionable lands in `pending_review` instead of
-  linking. Manual terms always outrank generated ones; the global
-  excluded list does not apply to explicit manual aliases.
-- **Priorities**: alias collisions resolve deterministically by
-  `gbfans_autolink_type_priority` (manual > product > category > wiki >
-  content by default), and at match time longer phrases beat shorter
-  overlapping ones ("Hasbro Proton Pack" > "Proton Pack").
-- **Markup**: `<a class="gbfans-autolink gbfans-autolink-<type>"
-  data-gbfans-autolink="true" data-gbfans-link-type="…"
-  data-gbfans-term="…" data-gbfans-link-id="…">` — canonical URLs, no
-  tracking parameters. A tiny client initializer (optional, isolated)
-  sends `internal_auto_link_click` GA4 events via `gtag`/`dataLayer`.
-
-## Proof of concept / migration path
-
-1. Install the plugin, leave `gbfans_autolink_enabled` **off** in
-   production until tested on staging.
-2. Set `gbfans_autolink_test_mappings`, e.g.:
-   `elbow pads,/shop/grey-elbow-pads,product`
-   `Alice frame padding,/shop/alice-frame-padding,product`
-3. Enable the plugin and verify (specs cover all of these, see below):
-   raw unchanged; first occurrence linked once per post; edits keep
-   working; `post.rebake!` applies/removes/retargets links as mappings
-   change; quotes/code/manual links untouched.
-4. Remove the equivalent entries from the discourse-linkify-words theme
-   component's `linked_words` so nothing double-links.
-5. Enable `gbfans_autolink_daily_sync_enabled` to populate the catalog
-   from sitemaps; review pending terms and collisions via the admin API;
-   enable `wiki` in `gbfans_autolink_enabled_types` only after review.
-6. Retire the theme component when no manual mappings remain.
+1. Set `sitemap_autolink_manual_mappings` with a couple of test rules,
+   e.g. `widget kit,https://example.com/shop/widget-kit,product`, and
+   enable `sitemap_autolink_enabled`. Make a test post and verify: the
+   first mention links, raw is unchanged, editing works, and clearing
+   the mapping + rebaking removes the link.
+2. Set `sitemap_autolink_excluded_categories` for any marketplace /
+   for-sale areas where members' own listings should not gain links
+   (subcategories inherit the exclusion).
+3. Configure `sitemap_autolink_sources`, one per entry as
+   `https://example.com/sitemap.xml,content_type` — the type is your
+   label (product, wiki, docs, …) for priorities, styling and
+   analytics. Add `sitemap_autolink_title_suffixes` for your site's
+   `<title>` boilerplate (e.g. ` - Example Shop`).
+4. Enable `sitemap_autolink_sync_enabled` (or POST
+   `/admin/plugins/sitemap-autolink/sync` to run one immediately),
+   then review the `pending` queue and `collisions` report.
+5. Optionally restrict `sitemap_autolink_enabled_types` while you
+   review a large content type, and enable
+   `sitemap_autolink_auto_rebake_on_changes` once you trust the flow.
 
 ## Settings
 
-All in Admin → Settings → Plugins, `gbfans autolink` filter. Highlights:
-
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `gbfans_autolink_enabled` | off | master switch |
-| `gbfans_autolink_test_mappings` | – | manual `phrase,url,type` rules |
-| `gbfans_autolink_max_links_per_destination_per_post` | 1 | once per destination per post |
-| `gbfans_autolink_max_links_per_post` | 0 | total cap per post (0 = unlimited) |
-| `gbfans_autolink_skip_quotes` | on | don't link inside quoted material |
-| `gbfans_autolink_excluded_categories` | – | never link in these categories + their subcategories (marketplace/for-sale areas) |
-| `gbfans_autolink_enabled_types` | manual, product, category | wiki off until vetted |
-| `gbfans_autolink_daily_sync_enabled` | off | sitemap → catalog job |
-| `gbfans_autolink_auto_rebake_on_changes` | off | selective rebakes after sync |
-| `gbfans_autolink_excluded_terms` | pack, belt, … | never auto-generate these |
+| `sitemap_autolink_enabled` | off | master switch |
+| `sitemap_autolink_sources` | – | `sitemap_url,content_type` entries; indexes auto-expand |
+| `sitemap_autolink_manual_mappings` | – | manual `phrase,url,type` rules (relative URL = forum-internal) |
+| `sitemap_autolink_max_links_per_destination_per_post` | 1 | once per destination per post |
+| `sitemap_autolink_max_links_per_post` | 0 | total cap per post (0 = unlimited) |
+| `sitemap_autolink_skip_quotes` | on | don't link inside quoted material |
+| `sitemap_autolink_excluded_categories` | – | never link in these categories + subcategories |
+| `sitemap_autolink_enabled_types` | – (all) | restrict which types may link |
+| `sitemap_autolink_type_priority` | manual | collision priority order, strongest first |
+| `sitemap_autolink_min_phrase_length` / `_min_phrase_words` | 5 / 2 | review gates for generated phrases |
+| `sitemap_autolink_generate_plurals` | on | simple plural variants |
+| `sitemap_autolink_title_suffixes` | – | strip site boilerplate from fetched titles |
+| `sitemap_autolink_excluded_terms` | – | never auto-generate these phrases |
+| `sitemap_autolink_sync_enabled` | off | daily sitemap → catalog job |
+| `sitemap_autolink_auto_rebake_on_changes` | off | selective rebakes after sync |
+| `sitemap_autolink_analytics_enabled` | on | GA4 click events (no-op without gtag/dataLayer) |
 
 ## Administration
 
 JSON management API (staff only) under
-`/admin/plugins/sitemap-autolink/…`: `status`, `entries` (search/filter/
-paginate), entry create/update (enable/disable, priority, URL override),
-term create/update/delete (add aliases, approve `pending_review`,
-disable), `collisions`, `pending`, `sync`, `rebuild`, `rebake`
-(per-phrase selective; full-forum deliberately stays with
-`rake posts:rebake`). See `app/controllers/gbfans_autolink_admin_controller.rb`
-for parameters. A dedicated admin UI page can be layered on top of these
-endpoints later; the API plus Data Explorer already avoids any
-hand-editing of JSON.
+`/admin/plugins/sitemap-autolink/…`: `status`, `entries` (search /
+filter / paginate), entry create/update (enable/disable, priority, URL
+override), term create/update/delete (add aliases, approve
+`pending_review`, disable), `collisions`, `pending`, `sync`, `rebuild`,
+`rebake` (per-phrase selective; full-forum deliberately stays with
+`rake posts:rebake`). See
+`app/controllers/sitemap_autolink_admin_controller.rb` for parameters.
 
 ## Development
 
 ```sh
-# in a Discourse checkout with this plugin symlinked/cloned into plugins/
+# in a Discourse checkout with this plugin cloned into plugins/
 LOAD_PLUGINS=1 bin/rspec plugins/discourse-sitemap-autolink/spec
 
-# dependency-free checks (no Discourse needed):
+# dependency-free checks (plain Ruby + nokogiri, no Discourse needed):
 ruby script/local_check.rb          # matcher + HTML applier behavior
-ruby script/benchmark_matcher.rb    # performance with a real catalog
+ruby script/benchmark_matcher.rb    # performance with a large catalog
 ```
 
-`spec/integration/gbfans_autolink_cooking_spec.rb` is the
-proof-of-concept contract: creation, editing, rebake-applies,
-rebake-removes, rebake-retargets, caps, quote/code/manual-link safety,
-catalog-driven linking, pending-review gating, and wiki staying dark
-until enabled.
+`spec/integration/sitemap_autolink_cooking_spec.rb` is the behavioral
+contract: creation, editing, rebake-applies/removes/retargets, per-post
+limits, quote/code/manual-link safety, category exclusions,
+catalog-driven linking, pending-review gating, and type restrictions.

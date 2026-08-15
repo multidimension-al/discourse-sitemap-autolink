@@ -1,18 +1,20 @@
 # frozen_string_literal: true
 
 # Benchmarks the Aho-Corasick matcher and the full HTML apply pass with a
-# realistic catalog. No Discourse boot needed.
+# large catalog. No Discourse boot needed.
 #
 #   ruby script/benchmark_matcher.rb [catalog.json]
 #
-# catalog.json is the compiled catalog produced by tools/catalog (the
-# format documented in docs/INTERNAL_LINKING.md). Without one, 5,500
-# synthetic phrases are generated instead.
+# catalog.json is optional: a JSON file shaped like
+#   { "types": ["product", …],
+#     "entries": [["/path", type_index], …],
+#     "aliases": { "phrase": entry_index, … } }
+# Without one, 5,500 synthetic phrases are generated.
 
 require "json"
 require "benchmark"
-require_relative "../lib/gbfans_autolink/matcher"
-require_relative "../lib/gbfans_autolink/ruleset"
+require_relative "../lib/sitemap_autolink/matcher"
+require_relative "../lib/sitemap_autolink/ruleset"
 
 begin
   require "nokogiri"
@@ -20,7 +22,7 @@ begin
 rescue LoadError
   NOKOGIRI = false
 end
-require_relative "../lib/gbfans_autolink/link_applier" if NOKOGIRI
+require_relative "../lib/sitemap_autolink/link_applier" if NOKOGIRI
 
 def load_rules(path)
   if path && File.exist?(path)
@@ -29,7 +31,7 @@ def load_rules(path)
     catalog["aliases"].map do |phrase, entry_index|
       url, type_index = catalog["entries"][entry_index]
       {
-        phrase: GbfansAutolink::Matcher.normalize(phrase),
+        phrase: SitemapAutolink::Matcher.normalize(phrase),
         url: url,
         type: types[type_index],
         priority: type_index + 1,
@@ -37,9 +39,9 @@ def load_rules(path)
     end
   else
     words = %w[
-      proton neutrino ecto ghost spirit trap pack wand frame padding elbow
-      grey uniform belt hose gizmo spectral plasm slime tobin vigo zuul
-      keymaster gatekeeper containment cyclotron thrower bumper shell
+      widget gasket flange bracket spindle gizmo rotor stator flux housing
+      deluxe compact heavy portable modular sealed vented copper steel nylon
+      capacitor manifold actuator coupler dampener regulator injector sensor
     ]
     (1..5_500).map do |i|
       phrase = "#{words[i % words.size]} #{words[(i / words.size) % words.size]} #{i}"
@@ -50,9 +52,9 @@ end
 
 def make_post_text(chars, rules)
   filler = <<~TEXT.gsub("\n", " ")
-    I finally finished my build this weekend and took it to the local con.
-    The mobility is way better than my previous setup and several people
-    asked where the parts came from, which honestly surprised me a bit.
+    I finally finished my build this weekend and took it to the local meetup.
+    The fit is way better than my previous setup and several people asked
+    where the parts came from, which honestly surprised me a bit.
   TEXT
   text = +""
   i = 0
@@ -69,13 +71,12 @@ rules = load_rules(ARGV[0])
 puts "phrases: #{rules.size}"
 
 matcher = nil
-build = Benchmark.realtime { matcher = GbfansAutolink::Matcher.new(rules) }
+build = Benchmark.realtime { matcher = SitemapAutolink::Matcher.new(rules) }
 puts format("automaton build: %.1f ms", build * 1000)
 
 [500, 2_000, 10_000].each do |size|
-  text = GbfansAutolink::Matcher.normalize(make_post_text(size, rules))
+  text = SitemapAutolink::Matcher.normalize(make_post_text(size, rules))
   iterations = size > 5_000 ? 200 : 500
-  # warmup
   10.times { matcher.scan(text) }
   elapsed = Benchmark.realtime { iterations.times { matcher.scan(text) } }
   per_scan = elapsed / iterations * 1000
@@ -90,16 +91,16 @@ puts format("automaton build: %.1f ms", build * 1000)
 end
 
 if NOKOGIRI
-  ruleset = GbfansAutolink::Ruleset.compile(rules)
+  ruleset = SitemapAutolink::Ruleset.compile(rules)
   ruleset.matcher # pre-build
-  options = { max_per_destination: 1, max_total: 5, skip_quotes: true, base_url: "https://www.gbfans.com" }
+  options = { max_per_destination: 1, max_total: 5, skip_quotes: true }
   html = "<p>#{make_post_text(2_000, rules)}</p>" * 2
   iterations = 200
   elapsed =
     Benchmark.realtime do
       iterations.times do
         doc = Nokogiri::HTML5.fragment(html)
-        GbfansAutolink::LinkApplier.apply!(doc, ruleset, options)
+        SitemapAutolink::LinkApplier.apply!(doc, ruleset, options)
       end
     end
   per_apply = elapsed / iterations * 1000

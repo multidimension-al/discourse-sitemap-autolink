@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module GbfansAutolink
+module SitemapAutolink
   # Applies a compiled ruleset to a cooked-post document (the Loofah/
   # Nokogiri fragment CookedPostProcessor hands to :post_process_cooked).
   #
@@ -15,8 +15,8 @@ module GbfansAutolink
     QUOTE_TAGS = %w[blockquote].freeze
 
     # doc: Nokogiri node (fragment or element)
-    # ruleset: GbfansAutolink::Ruleset
-    # options: max_per_destination:, max_total:, skip_quotes:, base_url:
+    # ruleset: SitemapAutolink::Ruleset
+    # options: max_per_destination:, max_total:, skip_quotes:
     # Returns the number of links inserted.
     def self.apply!(doc, ruleset, options)
       return 0 if ruleset.nil? || ruleset.empty?
@@ -47,7 +47,7 @@ module GbfansAutolink
       accepted = Matcher.resolve(candidates, counter)
       accepted
         .group_by { |candidate| candidate[:node] }
-        .each { |node, matches| apply_to_node(node, matches, options[:base_url].to_s) }
+        .each { |node, matches| apply_to_node(node, matches) }
       accepted.size
     end
 
@@ -77,7 +77,10 @@ module GbfansAutolink
 
     # Matches are non-overlapping within the node. Rebuild the node as
     # text + <a> + text … preserving the original casing and characters.
-    def self.apply_to_node(node, matches, base_url)
+    # Sitemap-sourced URLs are absolute; a relative URL (from a manual
+    # mapping) resolves against the forum origin, which makes relative
+    # manual mappings a way to link forum-internal pages.
+    def self.apply_to_node(node, matches)
       doc = node.document
       content = node.content
       replacement = []
@@ -90,12 +93,12 @@ module GbfansAutolink
             replacement << Nokogiri::XML::Text.new(content[cursor...match[:start]], doc)
           end
           link = Nokogiri::XML::Node.new("a", doc)
-          link["href"] = absolute_url(rule[:url], base_url)
-          link["class"] = "gbfans-autolink gbfans-autolink-#{rule[:type]}"
-          link["data-gbfans-autolink"] = "true"
-          link["data-gbfans-link-type"] = rule[:type].to_s
-          link["data-gbfans-term"] = rule[:phrase]
-          link["data-gbfans-link-id"] = rule[:entry_id].to_s if rule[:entry_id]
+          link["href"] = rule[:url]
+          link["class"] = "sitemap-autolink sitemap-autolink-#{rule[:type]}"
+          link["data-sitemap-autolink"] = "true"
+          link["data-autolink-type"] = rule[:type].to_s
+          link["data-autolink-term"] = rule[:phrase]
+          link["data-autolink-id"] = rule[:entry_id].to_s if rule[:entry_id]
           link.content = content[match[:start], match[:length]]
           replacement << link
           cursor = match[:start] + match[:length]
@@ -104,11 +107,6 @@ module GbfansAutolink
 
       replacement.each { |new_node| node.add_previous_sibling(new_node) }
       node.remove
-    end
-
-    def self.absolute_url(url, base_url)
-      return url if url.start_with?("http://", "https://", "//")
-      base_url.chomp("/") + url
     end
   end
 end

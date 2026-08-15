@@ -1,22 +1,22 @@
 import { apiInitializer } from "discourse/lib/api";
 
 // Lightweight, optional GA4 click tracking for server-generated
-// .gbfans-autolink links. Auto-linking works with or without this; if
+// .sitemap-autolink links. Auto-linking works with or without this; if
 // neither gtag nor dataLayer exists the handler is a no-op.
 export default apiInitializer((api) => {
   const siteSettings = api.container.lookup("service:site-settings");
-  if (!siteSettings.gbfans_autolink_analytics_enabled) {
+  if (!siteSettings.sitemap_autolink_analytics_enabled) {
     return;
   }
 
   const track = (event) => {
-    const link = event.target?.closest?.("a.gbfans-autolink");
+    const link = event.target?.closest?.("a.sitemap-autolink");
     if (!link) {
       return;
     }
     const params = {
-      link_type: link.getAttribute("data-gbfans-link-type") || "",
-      matched_term: link.getAttribute("data-gbfans-term") || "",
+      link_type: link.getAttribute("data-autolink-type") || "",
+      matched_term: link.getAttribute("data-autolink-term") || "",
       destination: link.getAttribute("href") || "",
     };
     const article = link.closest("article[data-post-id]");
