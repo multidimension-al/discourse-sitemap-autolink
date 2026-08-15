@@ -26,7 +26,25 @@ module GbfansAutolink
       if !SiteSetting.gbfans_autolink_include_private_messages
         return false if post.topic.nil? || post.topic.private_message?
       end
+      return false if excluded_category?(post.topic&.category_id)
       true
+    end
+
+    # True when the post's category — or any ancestor of it — is in the
+    # excluded list (e.g. marketplace/for-sale areas, where members'
+    # own listings must not gain shop links).
+    def self.excluded_category?(category_id)
+      return false if category_id.blank?
+      excluded = SiteSetting.gbfans_autolink_excluded_categories.split("|").map(&:to_i)
+      return false if excluded.empty?
+      current = category_id
+      depth = 0
+      while current.present? && depth < 5
+        return true if excluded.include?(current)
+        current = Category.where(id: current).pick(:parent_category_id)
+        depth += 1
+      end
+      false
     end
 
     def self.type_rank(type)

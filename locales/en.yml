@@ -8,6 +8,10 @@ en:
         captured groups into the URL).
       excluded_tags: "HTML tags whose content is never linkified (a and iframe are always skipped)."
       excluded_classes: "CSS classes whose elements are never linkified."
+      excluded_category_ids: >-
+        Numeric category IDs whose posts are never linkified; their
+        subcategories are excluded too. Use for marketplace/for-sale areas
+        where members' own listings should not gain shop links.
       max_links_per_term_per_post: >-
         Maximum number of times each destination URL is auto-linked within a
         single post. 1 links only the first occurrence in the post. 0 removes

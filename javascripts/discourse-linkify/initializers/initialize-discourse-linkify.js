@@ -1,5 +1,9 @@
 import { withPluginApi } from "discourse/lib/plugin-api";
-import { linkifyElement, readInputList } from "../lib/utilities";
+import {
+  isCategoryExcluded,
+  linkifyElement,
+  readInputList,
+} from "../lib/utilities";
 
 export default {
   name: "discourse-linkify-initializer",
@@ -53,8 +57,40 @@ export default {
         maxTotal: settings.max_links_per_post,
       };
 
+      const excludedCategoryIds = new Set(
+        settings.excluded_category_ids
+          .split("|")
+          .map((id) => parseInt(id.trim(), 10))
+          .filter((id) => !isNaN(id))
+      );
+
+      let categoriesById = null;
+      const inExcludedCategory = (helper) => {
+        if (excludedCategoryIds.size === 0) {
+          return false;
+        }
+        const categoryId = helper?.getModel?.()?.topic?.category_id;
+        if (!categoryId) {
+          return false;
+        }
+        if (categoriesById === null) {
+          const site = api.container.lookup("service:site");
+          categoriesById = new Map(
+            (site?.categories || []).map((c) => [c.id, c])
+          );
+        }
+        return isCategoryExcluded(
+          categoryId,
+          excludedCategoryIds,
+          categoriesById
+        );
+      };
+
       api.decorateCookedElement(
-        (element) => {
+        (element, helper) => {
+          if (inExcludedCategory(helper)) {
+            return;
+          }
           linkifyElement(element, actions, skipTags, skipClasses, limits);
         },
         { id: "linkify-words-theme" }

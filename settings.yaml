@@ -19,3 +19,7 @@ excluded_classes:
   type: list
   list_type: compact
   default: "onebox"
+excluded_category_ids:
+  type: list
+  list_type: compact
+  default: ""

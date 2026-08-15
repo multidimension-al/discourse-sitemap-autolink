@@ -17,6 +17,9 @@ plugins:
     default: true
   gbfans_autolink_include_private_messages:
     default: false
+  gbfans_autolink_excluded_categories:
+    default: ""
+    type: category_list
   gbfans_autolink_base_url:
     default: "https://www.gbfans.com"
   gbfans_autolink_sitemap_base_url:

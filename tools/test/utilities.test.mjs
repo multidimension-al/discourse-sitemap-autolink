@@ -8,6 +8,7 @@ globalThis.settings = { linked_words: "" };
 
 const {
   collectCandidates,
+  isCategoryExcluded,
   linkifyElement,
   LinkCounter,
   readInputList,
@@ -326,6 +327,38 @@ describe("building blocks", () => {
     counter.seed(element, "linkify-word");
     assert.equal(counter.total, 1);
     assert.equal(counter.allows("/shop/elbow"), false);
+  });
+});
+
+describe("category exclusions", () => {
+  // categories: 10 "For Sale" -> 11 "For Sale/Props" -> 12 sub-sub; 20 other
+  const categoriesById = new Map([
+    [10, { id: 10, parent_category_id: null }],
+    [11, { id: 11, parent_category_id: 10 }],
+    [12, { id: 12, parent_category_id: 11 }],
+    [20, { id: 20, parent_category_id: null }],
+  ]);
+
+  it("excludes the category itself", () => {
+    assert.equal(isCategoryExcluded(10, new Set([10]), categoriesById), true);
+  });
+
+  it("excludes descendants of an excluded category", () => {
+    assert.equal(isCategoryExcluded(11, new Set([10]), categoriesById), true);
+    assert.equal(isCategoryExcluded(12, new Set([10]), categoriesById), true);
+  });
+
+  it("does not exclude unrelated categories", () => {
+    assert.equal(isCategoryExcluded(20, new Set([10]), categoriesById), false);
+  });
+
+  it("handles unknown categories and cycles safely", () => {
+    assert.equal(isCategoryExcluded(99, new Set([10]), categoriesById), false);
+    const cyclic = new Map([
+      [1, { id: 1, parent_category_id: 2 }],
+      [2, { id: 2, parent_category_id: 1 }],
+    ]);
+    assert.equal(isCategoryExcluded(1, new Set([10]), cyclic), false);
   });
 });
 

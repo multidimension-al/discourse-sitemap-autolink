@@ -77,6 +77,7 @@ All in Admin → Settings → Plugins, `gbfans autolink` filter. Highlights:
 | `gbfans_autolink_max_links_per_destination_per_post` | 1 | once per destination per post |
 | `gbfans_autolink_max_links_per_post` | 0 | total cap per post (0 = unlimited) |
 | `gbfans_autolink_skip_quotes` | on | don't link inside quoted material |
+| `gbfans_autolink_excluded_categories` | – | never link in these categories + their subcategories (marketplace/for-sale areas) |
 | `gbfans_autolink_enabled_types` | manual, product, category | wiki off until vetted |
 | `gbfans_autolink_daily_sync_enabled` | off | sitemap → catalog job |
 | `gbfans_autolink_auto_rebake_on_changes` | off | selective rebakes after sync |

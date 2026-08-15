@@ -37,6 +37,7 @@ oneboxes, anything matched by `excluded_tags`/`excluded_classes`, and the
 | `max_links_per_post` | `0` | Total auto-link budget per post across all terms. `0` = unlimited. |
 | `excluded_tags` | `code\|pre` | HTML tags never linkified (`a` and `iframe` are always skipped) |
 | `excluded_classes` | `onebox` | CSS classes never linkified (consider adding `quote` if quoted posts should not be linkified) |
+| `excluded_category_ids` | – | numeric category IDs whose posts are never linkified (subcategories inherit the exclusion) — use for marketplace/for-sale areas |
 
 ## Development
 

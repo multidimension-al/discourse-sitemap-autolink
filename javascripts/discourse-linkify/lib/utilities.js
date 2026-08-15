@@ -212,6 +212,22 @@ const isSkippedClass = function (classes, skipClasses) {
   return classes && classes.split(" ").some((cls) => cls in skipClasses);
 };
 
+// True when the category — or any ancestor of it — is excluded from
+// linkifying (e.g. marketplace/for-sale areas). categoriesById maps
+// category id -> { parent_category_id } (the site's category list).
+const isCategoryExcluded = function (categoryId, excludedIds, categoriesById) {
+  let current = categoryId;
+  let depth = 0;
+  while (current && depth < 5) {
+    if (excludedIds.has(current)) {
+      return true;
+    }
+    current = categoriesById.get(current)?.parent_category_id;
+    depth++;
+  }
+  return false;
+};
+
 // Collect text nodes in document order, honoring skipped tags/classes.
 // Collecting up front means later DOM mutations cannot break iteration.
 const collectTextNodes = function (elem, skipTags, skipClasses, textNodes) {
@@ -300,6 +316,7 @@ export {
   applyMatches,
   collectCandidates,
   collectTextNodes,
+  isCategoryExcluded,
   LinkCounter,
   linkifyElement,
   prepareRegex,
