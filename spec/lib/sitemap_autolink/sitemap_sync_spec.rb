@@ -139,6 +139,20 @@ RSpec.describe SitemapAutolink::SitemapSync do
     expect(entry.reload.terms.where(id: manual.id)).to exist
   end
 
+  it "handles binary-encoded bodies with typographic characters" do
+    responses = {
+      "#{base}/sitemap-products.xml" =>
+        sitemap_xml([["/shop/spenglers-neutrona-wand", nil]]).b,
+      "#{base}/shop/spenglers-neutrona-wand" =>
+        page_html("Spengler’s Neutrona Wand").b,
+    }
+    report = build_sync(responses).run!
+    expect(report[:errors]).to be_empty
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/shop/spenglers-neutrona-wand")
+    expect(entry.title).to eq("Spengler’s Neutrona Wand")
+    expect(entry.terms.linkable.pluck(:normalized_phrase)).to include("spengler's neutrona wand")
+  end
+
   it "falls back to slug titles when the page fetch fails, then heals" do
     responses = {
       "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/foremans-field-guide", nil]]),

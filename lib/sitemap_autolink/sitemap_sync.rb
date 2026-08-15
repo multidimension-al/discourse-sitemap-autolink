@@ -151,13 +151,13 @@ module SitemapAutolink
     # Fetch one configured source. A <sitemapindex> is expanded into its
     # child sitemaps (one level, same content type).
     def fetch_sitemap_entries(url)
-      xml = @http_get.call(url, MAX_TITLE_BYTES * 4)
+      xml = to_utf8(@http_get.call(url, MAX_TITLE_BYTES * 4))
       return nil if xml.nil?
       if xml =~ /<sitemapindex[\s>]/i
         children = parse_sitemap(xml).first(MAX_INDEX_CHILDREN)
         entries = []
         children.each do |child_loc, _lastmod|
-          child_xml = @http_get.call(child_loc.strip, MAX_TITLE_BYTES * 4)
+          child_xml = to_utf8(@http_get.call(child_loc.strip, MAX_TITLE_BYTES * 4))
           if child_xml.nil?
             @report[:errors] << "failed to fetch child sitemap #{child_loc}"
             next
@@ -278,8 +278,16 @@ module SitemapAutolink
       entry.terms.linkable.pluck(:normalized_phrase)
     end
 
+    # HTTP bodies may arrive as raw binary; normalize to valid UTF-8
+    # before any text processing (bad byte sequences become "").
+    def to_utf8(body)
+      return body if body.nil?
+      return body if body.encoding == Encoding::UTF_8 && body.valid_encoding?
+      body.dup.force_encoding(Encoding::UTF_8).scrub("")
+    end
+
     def resolve_title(url)
-      body = @http_get.call(url, MAX_TITLE_BYTES)
+      body = to_utf8(@http_get.call(url, MAX_TITLE_BYTES))
       title = body && title_from_html(body)
       return [title, "page"] if title.present?
       [title_from_slug(url), "slug"]
@@ -331,9 +339,12 @@ module SitemapAutolink
 
     # Streaming GET with an identifying UA, redirect following and an
     # early abort once enough of the page arrived to contain the title.
+    # Accumulates in binary (chunks arrive as ASCII-8BIT; mixing them
+    # into a UTF-8 string raises Encoding::CompatibilityError on pages
+    # with typographic characters); callers convert via to_utf8.
     def default_http_get(url, max_bytes, redirects_left = 3)
       uri = URI.parse(url)
-      body = +""
+      body = +"".b
       Net::HTTP.start(
         uri.host,
         uri.port,
