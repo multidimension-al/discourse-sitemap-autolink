@@ -216,7 +216,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
       render json: failed_json.merge(error: "use `rake posts:rebake` for a full rebake"),
              status: 422
     elsif params[:phrase].present?
-      Jobs.enqueue(:sitemap_autolink_selective_rebake, phrase: params[:phrase])
+      Jobs.enqueue(:sitemap_autolink_rebake_posts, phrases: [params[:phrase]])
       render json: success_json
     else
       render json: failed_json, status: 422

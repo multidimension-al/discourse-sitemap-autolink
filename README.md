@@ -24,8 +24,11 @@ removes them cleanly.
   sitemaps (sitemap **indexes are expanded automatically**), diffs
   against the stored catalog by URL + `lastmod`, fetches pages for
   titles **only** for new/changed URLs, regenerates matching phrases,
-  and optionally enqueues selective rebakes. Post cooking never fetches
-  anything from the network.
+  and optionally enqueues **one** bounded, batched rebake job for the
+  posts the changes likely affect (never one job per phrase, and never
+  at all when the change set is catalog-scale — see
+  `sitemap_autolink_auto_rebake_max_phrases`). Post cooking never
+  fetches anything from the network.
 - **Safety / review**: generated phrases pass gates — minimum length,
   minimum word count (model numbers like "Mark-2" exempt), a
   common-English-word check, and a global excluded-terms list. Anything
@@ -135,7 +138,9 @@ Nothing here is a black box — every stage has a visible surface:
 | `sitemap_autolink_excluded_url_patterns` | – | never ingest matching sitemap URLs (substring or `*` wildcard, e.g. `*/checkout*`) |
 | `sitemap_autolink_excluded_terms` | – | never auto-generate these phrases |
 | `sitemap_autolink_sync_enabled` | off | daily sitemap → catalog job |
-| `sitemap_autolink_auto_rebake_on_changes` | off | selective rebakes after sync |
+| `sitemap_autolink_auto_rebake_on_changes` | off | one batched rebake job after each sync |
+| `sitemap_autolink_auto_rebake_max_phrases` | 50 | skip auto-rebake when a sync changes more phrases than this (initial imports never mass-rebake) |
+| `sitemap_autolink_auto_rebake_max_posts` | 500 | total posts one sync's rebake wave may touch |
 | `sitemap_autolink_analytics_enabled` | on | GA4 click events (no-op without gtag/dataLayer) |
 
 ## Administration
@@ -145,7 +150,7 @@ JSON management API (staff only) under
 filter / paginate), entry create/update (enable/disable, priority, URL
 override), term create/update/delete (add aliases, approve
 `pending_review`, disable), `collisions`, `pending`, `sync`, `rebuild`,
-`rebake` (per-phrase selective; full-forum deliberately stays with
+`rebake` (targeted, per-phrase; full-forum deliberately stays with
 `rake posts:rebake`). See
 `app/controllers/sitemap_autolink_admin_controller.rb` for parameters.
 
