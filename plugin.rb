@@ -68,7 +68,7 @@ after_initialize do
     # that would resolve the controller as Admin::…; the controller is a
     # top-level class (auth enforced by Admin::AdminController it
     # inherits from, plus the StaffConstraint here).
-    scope "/admin/plugins/sitemap-autolink", constraints: StaffConstraint.new do
+    scope "/admin/plugins/discourse-sitemap-autolink", constraints: StaffConstraint.new do
       get "entries" => "sitemap_autolink_admin#entries"
       post "entries" => "sitemap_autolink_admin#create_entry"
       put "entries/:id" => "sitemap_autolink_admin#update_entry"

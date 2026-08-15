@@ -5,7 +5,7 @@ import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { i18n } from "discourse-i18n";
 
-const BASE = "/admin/plugins/sitemap-autolink";
+const BASE = "/admin/plugins/discourse-sitemap-autolink";
 
 export default class AdminPluginsShowSitemapAutolinkCatalogController extends Controller {
   @tracked pendingTerms = [];

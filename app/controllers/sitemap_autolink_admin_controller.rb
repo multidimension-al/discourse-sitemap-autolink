@@ -3,18 +3,18 @@
 # JSON management API for the autolink catalog. Staff only (routes are
 # mounted under the admin namespace with StaffConstraint).
 #
-#   GET    /admin/plugins/sitemap-autolink/status
-#   GET    /admin/plugins/sitemap-autolink/entries?q=&type=&enabled=&page=
-#   POST   /admin/plugins/sitemap-autolink/entries      (manual entry)
-#   PUT    /admin/plugins/sitemap-autolink/entries/:id  (enable/priority/url…)
-#   POST   /admin/plugins/sitemap-autolink/terms        (add alias)
-#   PUT    /admin/plugins/sitemap-autolink/terms/:id    (approve/disable…)
-#   DELETE /admin/plugins/sitemap-autolink/terms/:id
-#   GET    /admin/plugins/sitemap-autolink/collisions
-#   GET    /admin/plugins/sitemap-autolink/pending
-#   POST   /admin/plugins/sitemap-autolink/sync
-#   POST   /admin/plugins/sitemap-autolink/rebuild
-#   POST   /admin/plugins/sitemap-autolink/rebake       (phrase= or all=true)
+#   GET    /admin/plugins/discourse-sitemap-autolink/status
+#   GET    /admin/plugins/discourse-sitemap-autolink/entries?q=&type=&enabled=&page=
+#   POST   /admin/plugins/discourse-sitemap-autolink/entries      (manual entry)
+#   PUT    /admin/plugins/discourse-sitemap-autolink/entries/:id  (enable/priority/url…)
+#   POST   /admin/plugins/discourse-sitemap-autolink/terms        (add alias)
+#   PUT    /admin/plugins/discourse-sitemap-autolink/terms/:id    (approve/disable…)
+#   DELETE /admin/plugins/discourse-sitemap-autolink/terms/:id
+#   GET    /admin/plugins/discourse-sitemap-autolink/collisions
+#   GET    /admin/plugins/discourse-sitemap-autolink/pending
+#   POST   /admin/plugins/discourse-sitemap-autolink/sync
+#   POST   /admin/plugins/discourse-sitemap-autolink/rebuild
+#   POST   /admin/plugins/discourse-sitemap-autolink/rebake       (phrase= or all=true)
 class SitemapAutolinkAdminController < Admin::AdminController
   requires_plugin SitemapAutolink::PLUGIN_NAME
 
