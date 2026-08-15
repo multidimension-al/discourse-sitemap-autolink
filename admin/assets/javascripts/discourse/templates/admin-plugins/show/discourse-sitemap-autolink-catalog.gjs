@@ -27,6 +27,12 @@ export default <template>
       <p class="sitemap-autolink-admin__notice">{{@controller.notice}}</p>
     {{/if}}
 
+    {{#if @controller.model.loadFailed}}
+      <p class="sitemap-autolink-admin__warning">
+        {{i18n "sitemap_autolink.admin.load_failed"}}
+      </p>
+    {{/if}}
+
     <section class="sitemap-autolink-admin__status">
       <h3>{{i18n "sitemap_autolink.admin.status_title"}}</h3>
       <p>

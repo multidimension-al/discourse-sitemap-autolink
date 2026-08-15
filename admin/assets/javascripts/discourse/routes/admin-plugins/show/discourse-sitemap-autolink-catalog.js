@@ -3,19 +3,24 @@ import DiscourseRoute from "discourse/routes/discourse";
 
 export default class AdminPluginsShowSitemapAutolinkCatalog extends DiscourseRoute {
   async model() {
+    // Each section loads independently — one failing endpoint shows an
+    // inline error instead of taking down the whole page.
+    const get = (path) =>
+      ajax(`/admin/plugins/sitemap-autolink/${path}`).catch(() => null);
     const [status, runs, pending, collisions, entries] = await Promise.all([
-      ajax("/admin/plugins/sitemap-autolink/status"),
-      ajax("/admin/plugins/sitemap-autolink/runs"),
-      ajax("/admin/plugins/sitemap-autolink/pending"),
-      ajax("/admin/plugins/sitemap-autolink/collisions"),
-      ajax("/admin/plugins/sitemap-autolink/entries"),
+      get("status"),
+      get("runs"),
+      get("pending"),
+      get("collisions"),
+      get("entries"),
     ]);
     return {
-      status,
-      runs: runs.runs,
-      pending: pending.pending,
-      collisions: collisions.collisions,
-      entries,
+      status: status || {},
+      runs: runs?.runs || [],
+      pending: pending?.pending || [],
+      collisions: collisions?.collisions || [],
+      entries: entries || { total: 0, entries: [] },
+      loadFailed: !status,
     };
   }
 
