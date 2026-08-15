@@ -1,13 +1,16 @@
-# discourse-gbfans-autolink
+# discourse-sitemap-autolink
 
 Server-side automatic internal linking for GBFans.com: posts link the
 first mention of shop products, categories and wiki articles to their
 canonical GBFans URLs, during Discourse's normal cooking/rebaking —
 `Post.raw` is never modified, `Post.cooked` gets normal reversible links.
 
-> Currently developed inside the `discourse-linkify-words` fork repo;
-> move this directory to its own repository before installing
-> (Discourse installs plugins from a repo root).
+> This repository (renamed from the `discourse-linkify-words` fork)
+> still carries the transitional theme component and catalog tooling
+> alongside this plugin directory. Discourse installs plugins from a
+> repository **root**, so before installing: either promote this
+> directory's contents to the repo root (once the theme component is
+> retired) or split it into its own repository.
 > Design rationale and verified extension points:
 > `docs/PLUGIN_ASSESSMENT.md` and `docs/INTERNAL_LINKING.md` in the
 > repo root.
@@ -82,7 +85,7 @@ All in Admin → Settings → Plugins, `gbfans autolink` filter. Highlights:
 ## Administration
 
 JSON management API (staff only) under
-`/admin/plugins/gbfans-autolink/…`: `status`, `entries` (search/filter/
+`/admin/plugins/sitemap-autolink/…`: `status`, `entries` (search/filter/
 paginate), entry create/update (enable/disable, priority, URL override),
 term create/update/delete (add aliases, approve `pending_review`,
 disable), `collisions`, `pending`, `sync`, `rebuild`, `rebake`
@@ -96,7 +99,7 @@ hand-editing of JSON.
 
 ```sh
 # in a Discourse checkout with this plugin symlinked/cloned into plugins/
-LOAD_PLUGINS=1 bin/rspec plugins/discourse-gbfans-autolink/spec
+LOAD_PLUGINS=1 bin/rspec plugins/discourse-sitemap-autolink/spec
 
 # dependency-free checks (no Discourse needed):
 ruby script/local_check.rb          # matcher + HTML applier behavior

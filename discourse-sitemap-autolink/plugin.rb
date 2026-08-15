@@ -1,16 +1,16 @@
 # frozen_string_literal: true
 
-# name: discourse-gbfans-autolink
+# name: discourse-sitemap-autolink
 # about: Automatic internal linking of GBFans shop products, categories and wiki articles in posts, driven by a sitemap-synced server-side catalog.
 # version: 0.1.0
 # authors: GBFans.com
-# url: https://github.com/ajquick/discourse-linkify-words
+# url: https://github.com/ajquick/discourse-sitemap-autolink
 # required_version: 3.4.0
 
 enabled_site_setting :gbfans_autolink_enabled
 
 module ::GbfansAutolink
-  PLUGIN_NAME = "discourse-gbfans-autolink"
+  PLUGIN_NAME = "discourse-sitemap-autolink"
 end
 
 require_relative "lib/gbfans_autolink/matcher"
@@ -54,7 +54,7 @@ after_initialize do
 
   Discourse::Application.routes.append do
     namespace :admin, constraints: StaffConstraint.new do
-      scope "/plugins/gbfans-autolink" do
+      scope "/plugins/sitemap-autolink" do
         get "entries" => "gbfans_autolink_admin#entries"
         post "entries" => "gbfans_autolink_admin#create_entry"
         put "entries/:id" => "gbfans_autolink_admin#update_entry"

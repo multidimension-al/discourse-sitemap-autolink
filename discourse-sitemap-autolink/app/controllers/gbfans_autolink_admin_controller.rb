@@ -3,18 +3,18 @@
 # JSON management API for the autolink catalog. Staff only (routes are
 # mounted under the admin namespace with StaffConstraint).
 #
-#   GET    /admin/plugins/gbfans-autolink/status
-#   GET    /admin/plugins/gbfans-autolink/entries?q=&type=&state=&page=
-#   POST   /admin/plugins/gbfans-autolink/entries        (manual entry)
-#   PUT    /admin/plugins/gbfans-autolink/entries/:id    (enable/priority/url…)
-#   POST   /admin/plugins/gbfans-autolink/terms          (add alias)
-#   PUT    /admin/plugins/gbfans-autolink/terms/:id      (approve/disable…)
-#   DELETE /admin/plugins/gbfans-autolink/terms/:id
-#   GET    /admin/plugins/gbfans-autolink/collisions
-#   GET    /admin/plugins/gbfans-autolink/pending
-#   POST   /admin/plugins/gbfans-autolink/sync
-#   POST   /admin/plugins/gbfans-autolink/rebuild
-#   POST   /admin/plugins/gbfans-autolink/rebake         (phrase= or all=true)
+#   GET    /admin/plugins/sitemap-autolink/status
+#   GET    /admin/plugins/sitemap-autolink/entries?q=&type=&state=&page=
+#   POST   /admin/plugins/sitemap-autolink/entries        (manual entry)
+#   PUT    /admin/plugins/sitemap-autolink/entries/:id    (enable/priority/url…)
+#   POST   /admin/plugins/sitemap-autolink/terms          (add alias)
+#   PUT    /admin/plugins/sitemap-autolink/terms/:id      (approve/disable…)
+#   DELETE /admin/plugins/sitemap-autolink/terms/:id
+#   GET    /admin/plugins/sitemap-autolink/collisions
+#   GET    /admin/plugins/sitemap-autolink/pending
+#   POST   /admin/plugins/sitemap-autolink/sync
+#   POST   /admin/plugins/sitemap-autolink/rebuild
+#   POST   /admin/plugins/sitemap-autolink/rebake         (phrase= or all=true)
 class GbfansAutolinkAdminController < Admin::AdminController
   requires_plugin GbfansAutolink::PLUGIN_NAME
 

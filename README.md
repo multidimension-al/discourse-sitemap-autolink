@@ -59,7 +59,7 @@ frequency limits before any DOM is modified.
    `tools/catalog/`)
 4. **Scope change:** catalog-scale linking moved server-side. The theme
    component intentionally stays as-is (manual mappings + per-post
-   limits) while the `discourse-gbfans-autolink/` plugin in this repo
+   limits) while the `discourse-sitemap-autolink/` plugin in this repo
    takes over automatic linking during post cooking/rebaking — see
    `docs/PLUGIN_ASSESSMENT.md` and the plugin README, including the
    step-by-step migration off this component.
