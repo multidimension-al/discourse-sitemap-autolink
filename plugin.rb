@@ -57,28 +57,32 @@ after_initialize do
   end
 
   Discourse::Application.routes.append do
-    namespace :admin, constraints: StaffConstraint.new do
-      # Full-page load of the custom admin page: core only routes
-      # /admin/plugins/:plugin_id and .../settings, so each custom page
-      # URL needs an explicit Rails route rendering the app shell.
-      get "plugins/discourse-sitemap-autolink/catalog" => "plugins#index"
+    # Full-page load of the custom admin page: core only routes
+    # /admin/plugins/:plugin_id and .../settings, so each custom page
+    # URL needs an explicit Rails route rendering the app shell (same
+    # pattern as discourse-subscriptions).
+    get "/admin/plugins/discourse-sitemap-autolink/catalog" => "admin/plugins#index",
+        :constraints => StaffConstraint.new
 
-      scope "/plugins/sitemap-autolink" do
-        get "entries" => "sitemap_autolink_admin#entries"
-        post "entries" => "sitemap_autolink_admin#create_entry"
-        put "entries/:id" => "sitemap_autolink_admin#update_entry"
-        post "terms" => "sitemap_autolink_admin#create_term"
-        put "terms/:id" => "sitemap_autolink_admin#update_term"
-        delete "terms/:id" => "sitemap_autolink_admin#destroy_term"
-        get "collisions" => "sitemap_autolink_admin#collisions"
-        get "pending" => "sitemap_autolink_admin#pending"
-        get "status" => "sitemap_autolink_admin#status"
-        get "runs" => "sitemap_autolink_admin#runs"
-        post "preview" => "sitemap_autolink_admin#preview"
-        post "sync" => "sitemap_autolink_admin#sync"
-        post "rebuild" => "sitemap_autolink_admin#rebuild"
-        post "rebake" => "sitemap_autolink_admin#rebake"
-      end
+    # JSON management API. Deliberately NOT inside `namespace :admin` —
+    # that would resolve the controller as Admin::…; the controller is a
+    # top-level class (auth enforced by Admin::AdminController it
+    # inherits from, plus the StaffConstraint here).
+    scope "/admin/plugins/discourse-sitemap-autolink", constraints: StaffConstraint.new do
+      get "entries" => "sitemap_autolink_admin#entries"
+      post "entries" => "sitemap_autolink_admin#create_entry"
+      put "entries/:id" => "sitemap_autolink_admin#update_entry"
+      post "terms" => "sitemap_autolink_admin#create_term"
+      put "terms/:id" => "sitemap_autolink_admin#update_term"
+      delete "terms/:id" => "sitemap_autolink_admin#destroy_term"
+      get "collisions" => "sitemap_autolink_admin#collisions"
+      get "pending" => "sitemap_autolink_admin#pending"
+      get "status" => "sitemap_autolink_admin#status"
+      get "runs" => "sitemap_autolink_admin#runs"
+      post "preview" => "sitemap_autolink_admin#preview"
+      post "sync" => "sitemap_autolink_admin#sync"
+      post "rebuild" => "sitemap_autolink_admin#rebuild"
+      post "rebake" => "sitemap_autolink_admin#rebake"
     end
   end
 end

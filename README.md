@@ -84,7 +84,7 @@ Nothing here is a black box — every stage has a visible surface:
   and the **collision report**.
 - **Sync audit trail** — every run is stored in
   `sitemap_autolink_sync_runs` (also `GET
-  /admin/plugins/sitemap-autolink/runs`), plus a summary line in
+  /admin/plugins/discourse-sitemap-autolink/runs`), plus a summary line in
   `/logs`.
 - **Dry run without installing anything**:
   `ruby script/preview_sync.rb --source "https://example.com/sitemap.xml,content" --limit 10`
@@ -110,7 +110,7 @@ Nothing here is a black box — every stage has a visible surface:
    analytics. Add `sitemap_autolink_title_suffixes` for your site's
    `<title>` boilerplate (e.g. ` - Example Shop`).
 4. Enable `sitemap_autolink_sync_enabled` (or POST
-   `/admin/plugins/sitemap-autolink/sync` to run one immediately),
+   `/admin/plugins/discourse-sitemap-autolink/sync` to run one immediately),
    then review the `pending` queue and `collisions` report.
 5. Optionally restrict `sitemap_autolink_enabled_types` while you
    review a large content type, and enable
@@ -141,7 +141,7 @@ Nothing here is a black box — every stage has a visible surface:
 ## Administration
 
 JSON management API (staff only) under
-`/admin/plugins/sitemap-autolink/…`: `status`, `entries` (search /
+`/admin/plugins/discourse-sitemap-autolink/…`: `status`, `entries` (search /
 filter / paginate), entry create/update (enable/disable, priority, URL
 override), term create/update/delete (add aliases, approve
 `pending_review`, disable), `collisions`, `pending`, `sync`, `rebuild`,

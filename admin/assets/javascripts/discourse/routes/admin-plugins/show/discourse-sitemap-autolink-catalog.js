@@ -6,7 +6,7 @@ export default class AdminPluginsShowSitemapAutolinkCatalog extends DiscourseRou
     // Each section loads independently — one failing endpoint shows an
     // inline error instead of taking down the whole page.
     const get = (path) =>
-      ajax(`/admin/plugins/sitemap-autolink/${path}`).catch(() => null);
+      ajax(`/admin/plugins/discourse-sitemap-autolink/${path}`).catch(() => null);
     const [status, runs, pending, collisions, entries] = await Promise.all([
       get("status"),
       get("runs"),
