@@ -229,12 +229,22 @@ class SitemapAutolinkAdminController < Admin::AdminController
     SitemapAutolink::Catalog.bump_version!
   end
 
+  # A run's counts and success flag are written only when it completes,
+  # so an open row is NOT a failure: it is either running right now or
+  # was killed mid-run by a restart. Say which, instead of rendering
+  # "FAILED 0 0 0 0" for a sync that is happily working.
+  def run_result(run)
+    return (run.success ? "ok" : "failed") if run.finished_at.present?
+    run.started_at && run.started_at > 2.hours.ago ? "running" : "interrupted"
+  end
+
   def serialize_run(run)
     {
       id: run.id,
       started_at: run.started_at,
       finished_at: run.finished_at,
       success: run.success,
+      result: run_result(run),
       triggered_by: run.triggered_by,
       urls_seen: run.urls_seen,
       urls_excluded: run.urls_excluded,

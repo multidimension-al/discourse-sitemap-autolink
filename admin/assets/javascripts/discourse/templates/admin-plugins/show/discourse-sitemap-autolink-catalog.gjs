@@ -143,8 +143,12 @@ export default <template>
                 <td>{{run.started_at}}</td>
                 <td>{{run.triggered_by}}</td>
                 <td>
-                  {{#if run.success}}
+                  {{#if (eq run.result "ok")}}
                     {{i18n "sitemap_autolink.admin.run_ok"}}
+                  {{else if (eq run.result "running")}}
+                    {{i18n "sitemap_autolink.admin.run_running"}}
+                  {{else if (eq run.result "interrupted")}}
+                    {{i18n "sitemap_autolink.admin.run_interrupted"}}
                   {{else}}
                     {{i18n "sitemap_autolink.admin.run_failed"}}
                   {{/if}}
