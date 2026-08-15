@@ -1,0 +1,389 @@
+# GBFans autolink catalog report
+
+Generated: 2026-08-15T17:27:39.402Z
+
+## Inventory
+
+| Type | Source URLs | Entries | Linkable aliases |
+| --- | --- | --- | --- |
+| product | 572 | 572 | 1,780 |
+| category | 67 | 67 | 120 |
+| wiki | 2,971 | 2,971 | 3,271 |
+| **total** | **3,610** | **3,610** | **5,171** |
+
+## Client catalog size
+
+- raw JSON: **326,545 bytes**
+- gzipped: **73,006 bytes**
+
+## Collisions (248)
+
+Aliases claimed by more than one destination; winner chosen by priority (product > category > wiki), then longer title, then URL. Full list below — review losers that deserve a manual alias.
+
+- `"new" ghostbusters monthly` → **/shop/catalog/34new34-ghostbusters-monthly** (over /shop/catalog/new-ghostbusters)
+- `"new" ghostbusters monthlys` → **/shop/catalog/34new34-ghostbusters-monthly** (over /shop/catalog/new-ghostbusters)
+- `55 central park west` → **/wiki/locations/55-central-park-west** (over /wiki/uncategorized/55-central-park-west)
+- `afterlife - mini puft in cappuccino cup funko pop! vinyl` → **/shop/ghostbusters-afterlife-mini-puft-cappuccino-cup** (over /shop/ghostbusters-afterlife-mini-puft-cappuccino-cup-funko-pop)
+- `afterlife - mini puft in cappuccino cup funko pop! vinyls` → **/shop/ghostbusters-afterlife-mini-puft-cappuccino-cup** (over /shop/ghostbusters-afterlife-mini-puft-cappuccino-cup-funko-pop)
+- `alice lc-1 replica pack frame` → **/shop/alice-lc-1-replica-pack-frame** (over /shop/replica-lc-1-alice-pack-frame)
+- `alice lc-1 replica pack frames` → **/shop/alice-lc-1-replica-pack-frame** (over /shop/replica-lc-1-alice-pack-frame)
+- `alice lc-1 replica strap & pad set` → **/shop/alice-lc-1-replica-pad-set** (over /shop/alice-lc-1-replica-straps-and-pad-set)
+- `alice lc-1 replica strap & pad sets` → **/shop/alice-lc-1-replica-pad-set** (over /shop/alice-lc-1-replica-straps-and-pad-set)
+- `alice lc-1 replica strap and pad set` → **/shop/alice-lc-1-replica-pad-set** (over /shop/alice-lc-1-replica-straps-and-pad-set)
+- `alice lc-1 replica strap and pad sets` → **/shop/alice-lc-1-replica-pad-set** (over /shop/alice-lc-1-replica-straps-and-pad-set)
+- `alice pack frame` → **/shop/alice-pack-frame-rothco** (over /shop/alice-pack-frame-lc-2, /wiki/equipment/proton-pack/alice-pack-frame)
+- `alice pack frames` → **/shop/alice-pack-frame-rothco** (over /shop/alice-pack-frame-lc-2)
+- `aluminum battery knob with strap` → **/shop/goggles-aluminum-battery-compartment-knob** (over /shop/goggles-aluminum-battery-knob-with-strap)
+- `aluminum battery knob with straps` → **/shop/goggles-aluminum-battery-compartment-knob** (over /shop/goggles-aluminum-battery-knob-with-strap)
+- `aluminum welded filler tube` → **/shop/aluminum-welded-filler-plug** (over /shop/aluminum-welded-filler-tube)
+- `aluminum welded filler tubes` → **/shop/aluminum-welded-filler-plug** (over /shop/aluminum-welded-filler-tube)
+- `arcolectric red indicator len` → **/shop/arcolectric-red-incandescent-indicator** (over /shop/arcolectric-red-indicator-lens)
+- `arcolectric red indicator lens` → **/shop/arcolectric-red-incandescent-indicator** (over /shop/arcolectric-red-indicator-lens)
+- `blower: cateye hl-300 spot light` → **/shop/cat-eye-hl-300-spot-light** (over /shop/cateye-hl-300-spot-light)
+- `blower: cateye hl-300 spot lights` → **/shop/cat-eye-hl-300-spot-light** (over /shop/cateye-hl-300-spot-light)
+- `blower: king sword bicycle headlight` → **/shop/king-sword-bicycle-headlight** (over /shop/slime-blower-king-sword-spot-light)
+- `blower: king sword bicycle headlights` → **/shop/king-sword-bicycle-headlight** (over /shop/slime-blower-king-sword-spot-light)
+- `busybuildr's ecto goggle plan` → **/wiki/equipment/plans/busybuildr** (over /wiki/uncategorized/busybuildrs-ecto-goggle-plans)
+- `busybuildr's ecto goggle plans` → **/wiki/equipment/plans/busybuildr** (over /wiki/uncategorized/busybuildrs-ecto-goggle-plans)
+- `cal-r mc250 resistor` → **/shop/cal-r-mc250-resistor** (over /shop/ghost-trap-resistor-cal-r, /wiki/equipment/ghost-trap/cal-r-mc250)
+- `cal-r mc250 resistors` → **/shop/cal-r-mc250-resistor** (over /shop/ghost-trap-resistor-cal-r)
+- `cateye hl-300 spot light` → **/shop/cat-eye-hl-300-spot-light** (over /shop/cateye-hl-300-spot-light)
+- `cateye hl-300 spot lights` → **/shop/cat-eye-hl-300-spot-light** (over /shop/cateye-hl-300-spot-light)
+- `clippard brass elbow` → **/shop/clippard-brass-elbow-gb1-ion-arm** (over /shop/clippard-brass-elbow)
+- `clippard brass elbows` → **/shop/clippard-brass-elbow-gb1-ion-arm** (over /shop/clippard-brass-elbow)
+- `copper 90-degree elbow` → **/shop/copper-elbow** (over /shop/reboot-pack-copper-elbow)
+- `copper 90-degree elbows` → **/shop/copper-elbow** (over /shop/reboot-pack-copper-elbow)
+- `crank generator` → **/wiki/equipment/proton-pack/crank-generator** (over /wiki/uncategorized/crank-generator)
+- `crank knob` → **/shop/crank-knob** (over /shop/crank-knobs, /wiki/equipment/proton-pack/crank-knob)
+- `crank knobs` → **/shop/crank-knob** (over /shop/crank-knobs)
+- `cry uncle` → **/wiki/real-ghostbusters/releases/cry-uncle** (over /wiki/real-ghostbusters/cry-uncle)
+- `dennys mccoy` → **/wiki/people/dennys-mccoy** (over /wiki/slimer-and-the-real-ghostbusters/crew/dennys-mccoy)
+- `dog day` → **/wiki/uncategorized/dog-days-slimer** (over /wiki/extreme-ghostbusters/dog-days, /wiki/slimer-and-the-real-ghostbusters/dog-days)
+- `dog days` → **/wiki/uncategorized/dog-days-slimer** (over /wiki/extreme-ghostbusters/dog-days, /wiki/slimer-and-the-real-ghostbusters/dog-days)
+- `ecto goggle` → **/shop/mattel-ecto-goggles** (over /wiki/FAQ/equipment/ecto-goggles, /wiki/equipment/ecto-goggles)
+- `ecto goggles` → **/shop/mattel-ecto-goggles** (over /wiki/FAQ/equipment/ecto-goggles, /wiki/equipment/ecto-goggles)
+- `egon spengler` → **/wiki/toys/mattel/egon-spengler-6-inch-slimed** (over /wiki/toys/mattel/egon-spengler-12-inch, /wiki/characters/egon-spengler)
+- `electrostatic dissipation assembly` → **/wiki/equipment/proton-pack/EDA** (over /wiki/uncategorized/electrostatic-dissipation-assembly)
+- `extreme ghostbuster` → **/wiki/extreme-ghostbusters** (over /wiki/FAQ/extreme-ghostbusters)
+- `extreme ghostbusters` → **/wiki/extreme-ghostbusters** (over /wiki/FAQ/extreme-ghostbusters)
+- `filming location` → **/wiki/ghostbusters-2/locations** (over /wiki/ghostbusters/locations)
+- `filming locations` → **/wiki/ghostbusters-2/locations** (over /wiki/ghostbusters/locations)
+- `flexo pet wire covering (afterlife)` → **/shop/afterlife-flexo-pet-wire-covering** (over /shop/flexo-pet-wire-covering)
+- `flexo pet wire covering (afterlife)s` → **/shop/afterlife-flexo-pet-wire-covering** (over /shop/flexo-pet-wire-covering)
+- `flexo pet wire covering` → **/shop/afterlife-flexo-pet-wire-covering** (over /shop/flexo-pet-wire-covering)
+- `flexo pet wire coverings` → **/shop/afterlife-flexo-pet-wire-covering** (over /shop/flexo-pet-wire-covering)
+- `foster male coupler (22-2b)` → **/shop/foster-male-quick-connect-22-2b** (over /shop/foster-male-quick-connect-b22-2)
+- `foster male coupler (22-2b)s` → **/shop/foster-male-quick-connect-22-2b** (over /shop/foster-male-quick-connect-b22-2)
+- `foster male coupler` → **/shop/foster-male-quick-connect-22-2b** (over /shop/foster-male-quick-connect-b22-2)
+- `foster male couplers` → **/shop/foster-male-quick-connect-22-2b** (over /shop/foster-male-quick-connect-b22-2)
+- `gbfans.com embroidered patch` → **/shop/gbfans-embroidered-patch** (over /shop/gbfanscom-cloth-embroidered-patch)
+- `gbfans.com embroidered patchs` → **/shop/gbfans-embroidered-patch** (over /shop/gbfanscom-cloth-embroidered-patch)
+- `gbfans.com lapel pin` → **/shop/gbfans-lapel-pin** (over /shop/gbfanscom-lapel-pin)
+- `gbfans.com lapel pins` → **/shop/gbfans-lapel-pin** (over /shop/gbfanscom-lapel-pin)
+- `get real comic issue #1` → **/shop/ghostbusters-get-real-comic-issue-1** (over /shop/ghostbusters-get-real-issue-1)
+- `get real comic issue #1s` → **/shop/ghostbusters-get-real-comic-issue-1** (over /shop/ghostbusters-get-real-issue-1)
+- `ghost trap` → **/wiki/equipment/ghost-trap** (over /wiki/games/ghostbusters-the-video-game/equipment/ghost-trap)
+- `ghostbusters (2016) minimates - slimed patty tolan with mrs. slimer` → **/shop/ghostbusters-2016-minimates-patty-tolan-mrs-slimer** (over /shop/ghostbusters-2016-minimates-slimed-patty-tolan-mrs-slimer)
+- `ghostbusters (2016) minimates - slimed patty tolan with mrs. slimers` → **/shop/ghostbusters-2016-minimates-patty-tolan-mrs-slimer** (over /shop/ghostbusters-2016-minimates-slimed-patty-tolan-mrs-slimer)
+- `ghostbusters 3` → **/wiki/FAQ/ghostbusters-3** (over /wiki/ghostbusters-3)
+- `ghostbusters activision` → **/wiki/games/ghostbusters-activision/sega** (over /wiki/games/ghostbusters-activision/atari, /wiki/games/ghostbusters-activision/NES)
+- `ghostbusters annual 2015` → **/shop/ghostbusters-annual-2015** (over /wiki/publications/comics/ghostbusters-annual-2015)
+- `ghostbusters ghost trap prop replica` → **/shop/ghostbusters-ghost-trap-prop** (over /shop/ghostbusters-ghost-trap-prop-replica)
+- `ghostbusters ghost trap prop replicas` → **/shop/ghostbusters-ghost-trap-prop** (over /shop/ghostbusters-ghost-trap-prop-replica)
+- `ghostbusters ii` → **/wiki/games/ghostbusters-ii-activision** (over /wiki/uncategorized/ghostbusters-ii-nintendo, /wiki/uncategorized/ghostbusters-ii-gameboy, /wiki/ghostbusters-2)
+- `ghostbusters international comic issue #8` → **/shop/ghostbusters-international-8** (over /shop/ghostbusters-international-comic-issue-8)
+- `ghostbusters international comic issue #8s` → **/shop/ghostbusters-international-8** (over /shop/ghostbusters-international-comic-issue-8)
+- `ghostbusters select action figures - series 1` → **/shop/ghostbusters-select-action-figure-louis-tully** (over /shop/ghostbusters-select-action-figure-ray-stantz, /shop/ghostbusters-select-action-figure-series-1, /shop/ghostbusters-select-action-figure-winston-zeddemore, /shop/ghostbusters-select-action-figures-series-1)
+- `ghostbusters select action figures - series 1s` → **/shop/ghostbusters-select-action-figure-louis-tully** (over /shop/ghostbusters-select-action-figure-ray-stantz, /shop/ghostbusters-select-action-figure-series-1, /shop/ghostbusters-select-action-figure-winston-zeddemore, /shop/ghostbusters-select-action-figures-series-1)
+- `ghostbusters select action figures - series 2` → **/shop/ghostbusters-select-action-figure-dana-barrett** (over /shop/ghostbusters-select-action-figure-egon-spengler, /shop/ghostbusters-select-action-figure-peter-venkman, /shop/ghostbusters-select-action-figures-series-2)
+- `ghostbusters select action figures - series 2s` → **/shop/ghostbusters-select-action-figure-dana-barrett** (over /shop/ghostbusters-select-action-figure-egon-spengler, /shop/ghostbusters-select-action-figure-peter-venkman, /shop/ghostbusters-select-action-figures-series-2)
+- `ghostbusters select action figures - series 3` → **/shop/ghostbusters-select-action-figure-janine-melnitz** (over /shop/ghostbusters-select-action-figure-quittin-time-ray-stantz, /shop/ghostbusters-select-action-figure-slimer, /shop/ghostbusters-select-action-figures-series-3)
+- `ghostbusters select action figures - series 3s` → **/shop/ghostbusters-select-action-figure-janine-melnitz** (over /shop/ghostbusters-select-action-figure-quittin-time-ray-stantz, /shop/ghostbusters-select-action-figure-slimer, /shop/ghostbusters-select-action-figures-series-3)
+- `ghostbusters vh` → **/wiki/ghostbusters/releases/1985-VHS** (over /wiki/ghostbusters/releases/1996-VHS, /wiki/ghostbusters/releases/1999-vhs)
+- `ghostbusters vhs` → **/wiki/ghostbusters/releases/1985-VHS** (over /wiki/ghostbusters/releases/1996-VHS, /wiki/ghostbusters/releases/1999-vhs)
+- `ghostbusters: afterlife - mini puft in cappuccino cup funko pop! vinyl` → **/shop/ghostbusters-afterlife-mini-puft-cappuccino-cup** (over /shop/ghostbusters-afterlife-mini-puft-cappuccino-cup-funko-pop)
+- `ghostbusters: afterlife - mini puft in cappuccino cup funko pop! vinyls` → **/shop/ghostbusters-afterlife-mini-puft-cappuccino-cup** (over /shop/ghostbusters-afterlife-mini-puft-cappuccino-cup-funko-pop)
+- `ghostbusters: get real comic issue #1` → **/shop/ghostbusters-get-real-comic-issue-1** (over /shop/ghostbusters-get-real-issue-1)
+- `ghostbusters: get real comic issue #1s` → **/shop/ghostbusters-get-real-comic-issue-1** (over /shop/ghostbusters-get-real-issue-1)
+- `ghostbusters: spirits unleashed` → **/shop/ghostbusters-spirits-unleashed-xbox-series-x** (over /shop/ghostbusters-spirits-unleashed-ps4)
+- `ghostbusters: spirits unleasheds` → **/shop/ghostbusters-spirits-unleashed-xbox-series-x** (over /shop/ghostbusters-spirits-unleashed-ps4)
+- `ghostbusters: total containment` → **/shop/ghostbusters-total-containment** (over /wiki/ghostbusters-total-containment)
+- `ghoulie bucket lapel pin` → **/shop/ghoulie-halloween-bucket-lapel-pins-set-1** (over /shop/ghoulie-halloween-bucket-lapel-pins-set-2)
+- `ghoulie bucket lapel pins` → **/shop/ghoulie-halloween-bucket-lapel-pins-set-1** (over /shop/ghoulie-halloween-bucket-lapel-pins-set-2)
+- `goggles: aluminum battery knob with strap` → **/shop/goggles-aluminum-battery-compartment-knob** (over /shop/goggles-aluminum-battery-knob-with-strap)
+- `goggles: aluminum battery knob with straps` → **/shop/goggles-aluminum-battery-compartment-knob** (over /shop/goggles-aluminum-battery-knob-with-strap)
+- `goggles: rubber strap for battery cover` → **/shop/goggles-replacement-rubber-strap-for-battery-compartment** (over /shop/goggles-rubber-strap-for-battery-cover)
+- `goggles: rubber strap for battery covers` → **/shop/goggles-replacement-rubber-strap-for-battery-compartment** (over /shop/goggles-rubber-strap-for-battery-cover)
+- `grey ribbon cable` → **/shop/grey-ribbon-cable-20-pin** (over /shop/grey-ribbon-cable-26-pin)
+- `grey ribbon cables` → **/shop/grey-ribbon-cable-20-pin** (over /shop/grey-ribbon-cable-26-pin)
+- `halloween edition: ghoulie bucket lapel pin` → **/shop/ghoulie-halloween-bucket-lapel-pins-set-1** (over /shop/ghoulie-halloween-bucket-lapel-pins-set-2)
+- `halloween edition: ghoulie bucket lapel pins` → **/shop/ghoulie-halloween-bucket-lapel-pins-set-1** (over /shop/ghoulie-halloween-bucket-lapel-pins-set-2)
+- `haslab ghost trap bargraph lens upgrade kit` → **/shop/haslab-ghost-trap-bargraph-lens-upgrade-kit** (over /shop/haslab-ghost-trap-bargraph-upgrade-kit)
+- `haslab ghost trap bargraph lens upgrade kits` → **/shop/haslab-ghost-trap-bargraph-lens-upgrade-kit** (over /shop/haslab-ghost-trap-bargraph-upgrade-kit)
+- `hat light` → **/shop/catalog/hat-lights** (over /wiki/equipment/proton-pack/hat-lights)
+- `hat lights` → **/shop/catalog/hat-lights** (over /wiki/equipment/proton-pack/hat-lights)
+- `hydrogen gas actuator` → **/wiki/equipment/proton-pack/HGA** (over /wiki/uncategorized/hydrogen-gas-actuator)
+- `king sword bicycle headlight` → **/shop/king-sword-bicycle-headlight** (over /shop/slime-blower-king-sword-spot-light)
+- `king sword bicycle headlights` → **/shop/king-sword-bicycle-headlight** (over /shop/slime-blower-king-sword-spot-light)
+- `leather keychain fob` → **/shop/leather-keychain-fob-style-1** (over /shop/leather-keychain-fob-style-2, /shop/leather-keychain-fob-style-3)
+- `leather keychain fobs` → **/shop/leather-keychain-fob-style-1** (over /shop/leather-keychain-fob-style-2, /shop/leather-keychain-fob-style-3)
+- `mack's factory ghostbusters aluminum emitter tip` → **/shop/aluminum-trigger-tip** (over /shop/macks-factory-ghostbusters-emitter-tip, /shop/proton-gun-trigger-tip)
+- `mack's factory ghostbusters aluminum emitter tips` → **/shop/aluminum-trigger-tip** (over /shop/macks-factory-ghostbusters-emitter-tip, /shop/proton-gun-trigger-tip)
+- `mack's factory ghostbusters banjo fitting replica` → **/shop/legris-banjo-fitting** (over /shop/legris-banjo-fitting-replica, /shop/macks-factory-ghostbusters-banjo-fitting-replica)
+- `mack's factory ghostbusters banjo fitting replicas` → **/shop/legris-banjo-fitting** (over /shop/legris-banjo-fitting-replica, /shop/macks-factory-ghostbusters-banjo-fitting-replica)
+- `mack's factory legris straight fitting replica` → **/shop/legris-straight-fitting** (over /shop/macks-factory-ghostbusters-legris-straight-fitting-replica, /shop/macks-factory-legris-straight-fitting-replica)
+- `mack's factory legris straight fitting replicas` → **/shop/legris-straight-fitting** (over /shop/macks-factory-ghostbusters-legris-straight-fitting-replica, /shop/macks-factory-legris-straight-fitting-replica)
+- `mattel: 6" peter venkman figure` → **/wiki/toys/mattel/mattel-6-peter-venkman-figure-with-proton-stream** (over /wiki/toys/mattel/mattel-6-peter-venkman-figure-with-slimer)
+- `mattel: ecto goggle` → **/shop/mattel-ecto-goggles** (over /wiki/uncategorized/mattel-ecto-goggles)
+- `mattel: ecto goggles` → **/shop/mattel-ecto-goggles** (over /wiki/uncategorized/mattel-ecto-goggles)
+- `mattel: neutrino wand` → **/shop/mattel-neutrino-wand** (over /wiki/uncategorized/mattel-neutrino-wand)
+- `mattel: pke meter` → **/shop/mattel-pke-meter** (over /wiki/toys/mattel/pke-meter)
+- `metal proton wand s-hook` → **/shop/metal-proton-wand-s-hook** (over /shop/proton-wand-s-hook)
+- `metal proton wand s-hooks` → **/shop/metal-proton-wand-s-hook** (over /shop/proton-wand-s-hook)
+- `metal v-hook` → **/shop/metal-v-hook** (over /shop/stainless-steel-v-hook)
+- `metal v-hooks` → **/shop/metal-v-hook** (over /shop/stainless-steel-v-hook)
+- `metallic bumper label` → **/shop/containment-unit-label** (over /shop/metallic-bumper-label)
+- `metallic bumper labels` → **/shop/containment-unit-label** (over /shop/metallic-bumper-label)
+- `new york public library` → **/wiki/games/ghostbusters-the-video-game/levels/new-york-city-library** (over /wiki/locations/new-york-public-library)
+- `no-ghost transgender pride lapel pin` → **/shop/no-ghost-lgbtq-transgender-lapel-pin** (over /shop/no-ghost-transgender-pride-lapel-pin)
+- `no-ghost transgender pride lapel pins` → **/shop/no-ghost-lgbtq-transgender-lapel-pin** (over /shop/no-ghost-transgender-pride-lapel-pin)
+- `now comic serie` → **/wiki/real-ghostbusters/NOW-comics** (over /wiki/slimer-and-the-real-ghostbusters/comics)
+- `now comic series` → **/wiki/real-ghostbusters/NOW-comics** (over /wiki/slimer-and-the-real-ghostbusters/comics)
+- `pack: alice lc-1 replica pack frame` → **/shop/alice-lc-1-replica-pack-frame** (over /shop/replica-lc-1-alice-pack-frame)
+- `pack: alice lc-1 replica pack frames` → **/shop/alice-lc-1-replica-pack-frame** (over /shop/replica-lc-1-alice-pack-frame)
+- `pack: alice lc-1 replica strap & pad set` → **/shop/alice-lc-1-replica-pad-set** (over /shop/alice-lc-1-replica-straps-and-pad-set)
+- `pack: alice lc-1 replica strap & pad sets` → **/shop/alice-lc-1-replica-pad-set** (over /shop/alice-lc-1-replica-straps-and-pad-set)
+- `pack: alice lc-1 replica strap and pad set` → **/shop/alice-lc-1-replica-pad-set** (over /shop/alice-lc-1-replica-straps-and-pad-set)
+- `pack: alice lc-1 replica strap and pad sets` → **/shop/alice-lc-1-replica-pad-set** (over /shop/alice-lc-1-replica-straps-and-pad-set)
+- `pack: alice pack frame` → **/shop/alice-pack-frame-rothco** (over /shop/alice-pack-frame-lc-2)
+- `pack: alice pack frames` → **/shop/alice-pack-frame-rothco** (over /shop/alice-pack-frame-lc-2)
+- `pack: aluminum welded filler tube` → **/shop/aluminum-welded-filler-plug** (over /shop/aluminum-welded-filler-tube)
+- `pack: aluminum welded filler tubes` → **/shop/aluminum-welded-filler-plug** (over /shop/aluminum-welded-filler-tube)
+- `pack: arcolectric red indicator len` → **/shop/arcolectric-red-incandescent-indicator** (over /shop/arcolectric-red-indicator-lens)
+- `pack: arcolectric red indicator lens` → **/shop/arcolectric-red-incandescent-indicator** (over /shop/arcolectric-red-indicator-lens)
+- `pack: clippard brass elbow` → **/shop/clippard-brass-elbow-gb1-ion-arm** (over /shop/clippard-brass-elbow)
+- `pack: clippard brass elbows` → **/shop/clippard-brass-elbow-gb1-ion-arm** (over /shop/clippard-brass-elbow)
+- `pack: copper 90-degree elbow` → **/shop/copper-elbow** (over /shop/reboot-pack-copper-elbow)
+- `pack: copper 90-degree elbows` → **/shop/copper-elbow** (over /shop/reboot-pack-copper-elbow)
+- `pack: crank knob` → **/shop/crank-knob** (over /shop/crank-knobs)
+- `pack: crank knobs` → **/shop/crank-knob** (over /shop/crank-knobs)
+- `pack: flexo pet wire covering (afterlife)` → **/shop/afterlife-flexo-pet-wire-covering** (over /shop/flexo-pet-wire-covering)
+- `pack: flexo pet wire covering (afterlife)s` → **/shop/afterlife-flexo-pet-wire-covering** (over /shop/flexo-pet-wire-covering)
+- `pack: flexo pet wire covering` → **/shop/afterlife-flexo-pet-wire-covering** (over /shop/flexo-pet-wire-covering)
+- `pack: flexo pet wire coverings` → **/shop/afterlife-flexo-pet-wire-covering** (over /shop/flexo-pet-wire-covering)
+- `pack: mack's factory ghostbusters aluminum emitter tip` → **/shop/aluminum-trigger-tip** (over /shop/macks-factory-ghostbusters-emitter-tip, /shop/proton-gun-trigger-tip)
+- `pack: mack's factory ghostbusters aluminum emitter tips` → **/shop/aluminum-trigger-tip** (over /shop/macks-factory-ghostbusters-emitter-tip, /shop/proton-gun-trigger-tip)
+- `pack: mack's factory ghostbusters banjo fitting replica` → **/shop/legris-banjo-fitting** (over /shop/legris-banjo-fitting-replica, /shop/macks-factory-ghostbusters-banjo-fitting-replica)
+- `pack: mack's factory ghostbusters banjo fitting replicas` → **/shop/legris-banjo-fitting** (over /shop/legris-banjo-fitting-replica, /shop/macks-factory-ghostbusters-banjo-fitting-replica)
+- `pack: mack's factory legris straight fitting replica` → **/shop/legris-straight-fitting** (over /shop/macks-factory-ghostbusters-legris-straight-fitting-replica, /shop/macks-factory-legris-straight-fitting-replica)
+- `pack: mack's factory legris straight fitting replicas` → **/shop/legris-straight-fitting** (over /shop/macks-factory-ghostbusters-legris-straight-fitting-replica, /shop/macks-factory-legris-straight-fitting-replica)
+- `pack: metal proton wand s-hook` → **/shop/metal-proton-wand-s-hook** (over /shop/proton-wand-s-hook)
+- `pack: metal proton wand s-hooks` → **/shop/metal-proton-wand-s-hook** (over /shop/proton-wand-s-hook)
+- `pack: metal v-hook` → **/shop/metal-v-hook** (over /shop/stainless-steel-v-hook)
+- `pack: metal v-hooks` → **/shop/metal-v-hook** (over /shop/stainless-steel-v-hook)
+- `pack: metallic bumper label` → **/shop/containment-unit-label** (over /shop/metallic-bumper-label)
+- `pack: metallic bumper labels` → **/shop/containment-unit-label** (over /shop/metallic-bumper-label)
+- `pack: resin cast beam line tube` → **/shop/resin-cast-beam-line-tube** (over /shop/resin-cast-beamline-tube)
+- `pack: resin cast beam line tubes` → **/shop/resin-cast-beam-line-tube** (over /shop/resin-cast-beamline-tube)
+- `pack: sage m25w resistor` → **/shop/sage-m25w-resisitor** (over /shop/sage-resistors)
+- `pack: sage m25w resistors` → **/shop/sage-m25w-resisitor** (over /shop/sage-resistors)
+- `pack: spirit halloween proton pack cyclotron lens set` → **/shop/spirit-halloween-proton-pack-cyclotron-lens** (over /shop/spirit-halloween-proton-pack-cyclotron-lens-set)
+- `pack: spirit halloween proton pack cyclotron lens sets` → **/shop/spirit-halloween-proton-pack-cyclotron-lens** (over /shop/spirit-halloween-proton-pack-cyclotron-lens-set)
+- `pamela hickey` → **/wiki/people/pamela-hickey** (over /wiki/slimer-and-the-real-ghostbusters/crew/pamela-hickey)
+- `pedal hose` → **/shop/trap-pedal-bellows** (over /shop/trap-pedal-hose)
+- `pedal hoses` → **/shop/trap-pedal-bellows** (over /shop/trap-pedal-hose)
+- `pistol belt` → **/shop/khaki-pistol-belts** (over /shop/uniform-pistol-belt, /wiki/equipment/uniform/pistol-belt)
+- `pistol belts` → **/shop/khaki-pistol-belts** (over /shop/uniform-pistol-belt)
+- `pke meter` → **/shop/mattel-pke-meter** (over /wiki/toys/mattel/pke-meter-by-mattel, /wiki/FAQ/equipment/pke-meter, /wiki/equipment/pke-meter, /wiki/games/ghostbusters-the-video-game/equipment/PKE-meter)
+- `primary power distributor` → **/wiki/equipment/proton-pack/PPD** (over /wiki/uncategorized/primary-power-distributor)
+- `proton pack` → **/wiki/FAQ/equipment/proton-pack** (over /wiki/equipment/proton-pack, /wiki/games/ghostbusters-the-video-game/equipment/proton-pack)
+- `ray parker jr.` → **/wiki/ray-parker-jr** (over /wiki/uncategorized/ray-parker-jr)
+- `ray stantz` → **/wiki/toys/mattel/ray-stantz** (over /wiki/characters/ray-stantz)
+- `real ghostbuster` → **/wiki/games/the-real-ghostbusters-activison** (over /wiki/real-ghostbusters, /wiki/the-real-ghostbusters-marvel-uk, /wiki/FAQ/real-ghostbusters)
+- `real ghostbusters arcade game` → **/wiki/games/the-real-ghostbusters-arcade-game** (over /wiki/games/real-ghostbusters-arcade)
+- `real ghostbusters` → **/wiki/games/the-real-ghostbusters-activison** (over /wiki/real-ghostbusters, /wiki/the-real-ghostbusters-marvel-uk, /wiki/FAQ/real-ghostbusters)
+- `real ghostbusters: complete collection` → **/wiki/real-ghostbusters/releases/complete-collection** (over /wiki/uncategorized/real-ghostbusters-complete-collection)
+- `real ghostbusters: now comics annual 1993` → **/wiki/publications/comics/annual-1993** (over /wiki/publications/comics/real-ghostbusters-now-comics-annual-1993)
+- `red (4mm od)` → **/shop/18-tubing-red** (over /shop/4mm-od-tubing-red, /shop/small-red-tubing)
+- `red (4mm od)s` → **/shop/18-tubing-red** (over /shop/4mm-od-tubing-red, /shop/small-red-tubing)
+- `red light lens & socket` → **/shop/red-light-lens-cover** (over /shop/trap-red-light-lens-and-socket)
+- `red light lens & sockets` → **/shop/red-light-lens-cover** (over /shop/trap-red-light-lens-and-socket)
+- `red light lens and socket` → **/shop/red-light-lens-cover** (over /shop/trap-red-light-lens-and-socket)
+- `red light lens and sockets` → **/shop/red-light-lens-cover** (over /shop/trap-red-light-lens-and-socket)
+- `resin cast beam line tube` → **/shop/resin-cast-beam-line-tube** (over /shop/resin-cast-beamline-tube)
+- `resin cast beam line tubes` → **/shop/resin-cast-beam-line-tube** (over /shop/resin-cast-beamline-tube)
+- `resin cast lifegard ii` → **/shop/resin-cast-lifegard** (over /shop/resin-cast-lifegard-ii)
+- `resin cast lifegard iis` → **/shop/resin-cast-lifegard** (over /shop/resin-cast-lifegard-ii)
+- `rgb pke ghost lapel pin` → **/shop/real-ghostbusters-pke-ghost-lapel-pin** (over /shop/rgb-pke-meter-ghost-lapel-pin)
+- `rgb pke ghost lapel pins` → **/shop/real-ghostbusters-pke-ghost-lapel-pin** (over /shop/rgb-pke-meter-ghost-lapel-pin)
+- `ribbon cable clamp` → **/shop/ribbon-cable-clamp** (over /wiki/equipment/proton-pack/ribbon-cable-clamp)
+- `rubber strap for battery cover` → **/shop/goggles-replacement-rubber-strap-for-battery-compartment** (over /shop/goggles-rubber-strap-for-battery-cover)
+- `rubber strap for battery covers` → **/shop/goggles-replacement-rubber-strap-for-battery-compartment** (over /shop/goggles-rubber-strap-for-battery-cover)
+- `sage m25w resistor` → **/shop/sage-m25w-resisitor** (over /shop/sage-resistors)
+- … 48 more
+
+## Suspicious / too-generic aliases (38)
+
+Currently **enabled** aliases that look risky (common English words or very short). Add the bad ones to `excludedAliases` in overrides.json.
+
+- `black slime` → /wiki/games/ghostbusters-the-video-game/ghosts/black-slime (all-common-words)
+- `board game` → /shop/catalog/ghostbusters-the-board-game (all-common-words)
+- `board games` → /shop/catalog/ghostbusters-the-board-game (all-common-words)
+- `clear hose` → /shop/clear-uniform-hose (all-common-words)
+- `clear hoses` → /shop/clear-uniform-hose (all-common-words)
+- `comic book` → /shop/catalog/comics (all-common-words)
+- `comic books` → /shop/catalog/comics (all-common-words)
+- `dorbz` → /shop/catalog/dorbz (short-single-word)
+- `dorbzs` → /shop/catalog/dorbz (short-single-word)
+- `ecto-1` → /wiki/uncategorized/ecto-1 (short-single-word)
+- `ecto-2` → /wiki/real-ghostbusters/ecto-2 (short-single-word)
+- `ecto-3` → /wiki/real-ghostbusters/ecto-3 (short-single-word)
+- `episode guide` → /wiki/extreme-ghostbusters/episode-guide (all-common-words)
+- `ghost trap` → /wiki/equipment/ghost-trap (all-common-words)
+- `gun knob` → /wiki/equipment/proton-pack/gun-knobs (all-common-words)
+- `gun knobs` → /wiki/equipment/proton-pack/gun-knobs (all-common-words)
+- `gun mount` → /wiki/equipment/proton-pack/gun-mount (all-common-words)
+- `hat light` → /shop/catalog/hat-lights (all-common-words)
+- `hat lights` → /shop/catalog/hat-lights (all-common-words)
+- `legos` → /shop/catalog/lego (short-single-word)
+- `mattel` → /shop/catalog/mattel (short-single-word)
+- `mopeez` → /shop/catalog/mopeez (short-single-word)
+- `now comic` → /wiki/uncategorized/now-comics (all-common-words)
+- `now comics` → /wiki/uncategorized/now-comics (all-common-words)
+- `other equipment` → /wiki/equipment/other (all-common-words)
+- `pack part` → /shop/catalog/pack-parts (all-common-words)
+- `pack parts` → /shop/catalog/pack-parts (all-common-words)
+- `patche` → /shop/catalog/patches (short-single-word)
+- `prop replica` → /wiki/uncategorized/prop-replicas (all-common-words)
+- `resin part` → /shop/catalog/resin-parts (all-common-words)
+- `resin parts` → /shop/catalog/resin-parts (all-common-words)
+- `shakem` → /shop/catalog/shakems (short-single-word)
+- `trap part` → /shop/catalog/trap-parts (all-common-words)
+- `trap parts` → /shop/catalog/trap-parts (all-common-words)
+- `wand part` → /shop/catalog/wand-parts (all-common-words)
+- `wand parts` → /shop/catalog/wand-parts (all-common-words)
+- `yellow hose` → /shop/yellow-uniform-hose (all-common-words)
+- `yellow hoses` → /shop/yellow-uniform-hose (all-common-words)
+
+## Single-word wiki titles kept OUT of the catalog (147)
+
+Held back by min_wiki_title_words=2. Vet and promote the safe ones via manualAliases.
+
+- /wiki/toys/kenner/monsters
+- /wiki/characters/samhain
+- /wiki/characters/killerwatt
+- /wiki/extreme-ghostbusters/grease
+- /wiki/characters/vampire
+- /wiki/characters/werewolf
+- /wiki/characters/the-prosecutor
+- /wiki/characters/quoatle
+- /wiki/real-ghostbusters/kitty-cornered
+- /wiki/uncategorized/p-clamp
+- /wiki/characters/unicorn
+- /wiki/equipment/proton-pack/legris
+- /wiki/fans/websites/the-ectozone
+- /wiki/extreme-ghostbusters/killjoys
+- /wiki/characters/gremlin
+- /wiki/equipment/proton-pack/attenuator
+- /wiki/characters/domoviet
+- /wiki/games/ghostbusters-the-video-game/equipment/paragoggles
+- /wiki/characters/the-collector
+- /wiki/characters/the-boogieman
+- /wiki/real-ghostbusters/spacebusters
+- /wiki/equipment/proton-pack/nycoil
+- /wiki/uncategorized/bootstrap-footer
+- /wiki/characters/jennifer
+- /wiki/extreme-ghostbusters/grundelesque
+- /wiki/real-ghostbusters/ghostworld
+- /wiki/fans/websites/ghostbusters-net
+- /wiki/characters/orlox
+- /wiki/characters/chicoloni
+- /wiki/characters/kestrel
+- /wiki/slimer-and-the-real-ghostbusters/scareface
+- /wiki/equipment/proton-pack/slo-blo
+- /wiki/equipment/ectomobile
+- /wiki/real-ghostbusters/kenner-10410
+- /wiki/characters/alice
+- /wiki/characters/shifter
+- /wiki/characters/the-phantom
+- /wiki/characters/lothgar
+- /wiki/equipment/proton-pack/s-hook
+- /wiki/equipment/proton-pack/vents
+- /wiki/real-ghostbusters/poultrygeist
+- /wiki/equipment/ectomobile/unity
+- /wiki/podcast
+- /wiki/equipment/other/globuscope-panoramic-camera
+- /wiki/characters/aargon
+- /wiki/real-ghostbusters/grundel
+- /wiki/real-ghostbusters/releases/slimefighters
+- /wiki/firehouse
+- /wiki/publications/comics/tokyopop
+- /wiki/characters/charon
+- /wiki/real-ghostbusters/venk-man
+- /wiki/games/ghostbusters-the-video-game/achievements/wanted
+- /wiki/characters/drool
+- /wiki/ghostbusters-2/score
+- /wiki/equipment/ectomobile/federal
+- /wiki/characters/djinn
+- /wiki/characters/the-grundel
+- /wiki/toys/trendmasters
+- /wiki/characters/malachai
+- /wiki/characters/tolay
+- /wiki/real-ghostbusters/masquerade
+- /wiki/uncategorized/cal-r
+- /wiki/characters/pestilence
+- /wiki/FAQ/ghostbusters-the-video-game/this-is-crazy-is-it-october-31-or-june-29-2009-
+- /wiki/characters/the-unspeakable
+- /wiki/tobins-spirit-guide/tobin
+- /wiki/extreme-ghostbusters/the-unseen
+- /wiki/extreme-ghostbusters/deadliners
+- /wiki/equipment/proton-pack/v-hook
+- /wiki/extreme-ghostbusters/the-sphinx
+- /wiki/equipment/proton-pack/cyclotron
+- /wiki/games/ghostbusters-the-video-game/achievements/hedgebuster
+- /wiki/tobins-spirit-guide/garraka
+- /wiki/real-ghostbusters/boo-dunit
+- /wiki/characters/werechicken
+- /wiki/games/ghostbusters-the-video-game/ghosts/the-chairman
+- /wiki/characters/death
+- /wiki/uncategorized
+- /wiki/fans/websites/proptopia
+- /wiki/characters/ulyoth
+- /wiki/extreme-ghostbusters/releases
+- /wiki/real-ghostbusters/robo-buster-character
+- /wiki/games/ghostbusters-the-video-game/achievements/payday
+- /wiki/characters/anshar
+- /wiki/characters/nurgoth
+- /wiki/characters/arzun
+- /wiki/uncategorized/reference
+- /wiki/real-ghostbusters/the-copycat
+- /wiki/characters/the-sleaze
+- /wiki/characters/gorgar
+- /wiki/characters/siren
+- /wiki/games/ghostbusters-the-video-game/ghosts/cultist
+- /wiki/real-ghostbusters/rollerghoster
+- /wiki/characters/banshee
+- /wiki/slimer-now-comics
+- /wiki/extreme-ghostbusters/the-ghostmakers
+- /wiki/uncategorized/tahiti
+- /wiki/characters/boghound
+- /wiki/characters/victor
+- /wiki/fans/websites
+- … 47 more
+
+## Gates
+
+- aliases dropped by excludedAliases: 19 hits across 7 terms
+- aliases dropped for length < 5: 41 (23 distinct)
+- generic single-word aliases auto-excluded: 39 (22 distinct: `banks`, `blues`, `character`, `characters`, `comic`, `comics`, `equipment`, `games`, `green`, `greens`, `label`, `labels`, `location`, `locations`, `people`, `slimer`, `tubing`, `tubings`, `vehicle`, `vehicles`, `yellow`, `yellows`)
+- entries disabled via overrides: 0
+
+## Title fetch failures → slug-derived titles (6)
+
+These titles are LOSSY (no punctuation/case). Re-run the builder to retry, or fix manually via extraEntries.
+- /wiki/real-ghostbusters/real-ghostbusters-episode-guide
+- /wiki/brandon-burke
+- /wiki/peter-g-travers
+- /wiki/lenny-clarke
+- /wiki/vol-16
+- /wiki/vol-21
