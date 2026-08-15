@@ -8,8 +8,8 @@ canonical GBFans URLs, during Discourse's normal cooking/rebaking —
 > This repository is the plugin — install it by adding the repo's git
 > URL to your Discourse `app.yml` plugin list (see Install below). The
 > earlier client-side theme-component prototype and the offline catalog
-> tooling were removed from the tip; they remain reachable at the git
-> tag `theme-component-archive`. Design rationale and verified
+> tooling were removed from the tip; they remain in git history
+> (last present at commit `62854a8`). Design rationale and verified
 > extension points: `docs/PLUGIN_ASSESSMENT.md` and
 > `docs/INTERNAL_LINKING.md`.
 
@@ -49,8 +49,8 @@ off) — it does nothing until you enable it, so installing is safe.
   a rule + rebaking removes its links, structurally.
 - **Matching** is one Aho–Corasick scan per post over a compiled,
   cached ruleset (rebuilt only when the catalog version bumps). Measured
-  with a real 5,171-phrase GBFans catalog (archived at the
-  `theme-component-archive` tag): automaton build ~120 ms (cached),
+  with a real 5,171-phrase GBFans catalog (in git history at commit
+  `62854a8`, theme-component era): automaton build ~120 ms (cached),
   ~0.7 ms per 2 KB post, full parse+scan+rewrite ~1.9 ms —
   `ruby script/benchmark_matcher.rb [catalog.json]` (synthetic phrases
   when no catalog file is given).

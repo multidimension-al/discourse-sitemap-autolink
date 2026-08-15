@@ -1,6 +1,6 @@
 > **Note:** this design document predates the repo becoming plugin-only.
 > The theme component and tools/catalog generator it references were
-> removed from the tip and live at the git tag `theme-component-archive`;
+> removed from the tip and live in git history (commit `62854a8`);
 > the plugin at the repository root implements the same architecture
 > server-side.
 
