@@ -1,0 +1,57 @@
+plugins:
+  gbfans_autolink_enabled:
+    default: false
+  gbfans_autolink_test_mappings:
+    default: ""
+    type: list
+    list_type: compact
+  gbfans_autolink_max_links_per_destination_per_post:
+    default: 1
+    min: 0
+    max: 100
+  gbfans_autolink_max_links_per_post:
+    default: 0
+    min: 0
+    max: 1000
+  gbfans_autolink_skip_quotes:
+    default: true
+  gbfans_autolink_include_private_messages:
+    default: false
+  gbfans_autolink_base_url:
+    default: "https://www.gbfans.com"
+  gbfans_autolink_sitemap_base_url:
+    default: "https://www.gbfans.com"
+  gbfans_autolink_sources:
+    default: "/sitemaps/shop-products.xml,product|/sitemaps/shop-categories.xml,category|/sitemaps/wiki.xml,wiki"
+    type: list
+  gbfans_autolink_enabled_types:
+    default: "manual|product|category"
+    type: list
+    list_type: compact
+  gbfans_autolink_type_priority:
+    default: "manual|product|category|wiki|content"
+    type: list
+    list_type: compact
+  gbfans_autolink_min_phrase_length:
+    default: 5
+    min: 1
+    max: 100
+  gbfans_autolink_min_wiki_words:
+    default: 2
+    min: 1
+    max: 10
+  gbfans_autolink_excluded_terms:
+    default: "pack|packs|belt|belts|patch|patches|uniform|uniforms|slime|trap|traps|wand|wands|hose|hoses|frame|frames|shell|shells|ghostbusters|ghostbuster"
+    type: list
+    list_type: compact
+  gbfans_autolink_daily_sync_enabled:
+    default: false
+  gbfans_autolink_auto_rebake_on_changes:
+    default: false
+  gbfans_autolink_max_rebakes_per_job_run:
+    default: 200
+    min: 10
+    max: 5000
+  gbfans_autolink_analytics_enabled:
+    default: true
+    client: true

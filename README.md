@@ -53,10 +53,13 @@ frequency limits before any DOM is modified.
 
 ## Roadmap
 
-1. ~~Per-post link frequency limits~~ (done)
-2. Catalog design: enumerate GBFans shop products and Wiki articles from
-   authoritative sources (see `docs/`)
-3. Generated draft catalog + collision/quality report
-4. Dynamic catalog consumption with priorities, exclusions, and
-   `gbfans-autolink*` CSS classes (default-off until vetted)
-5. GA4 click analytics for automatic links
+1. ~~Per-post link frequency limits~~ (done — this component)
+2. ~~Catalog source investigation + design~~ (done — `docs/INTERNAL_LINKING.md`)
+3. ~~Generated draft catalog + collision/quality report~~ (done —
+   `tools/catalog/`)
+4. **Scope change:** catalog-scale linking moved server-side. The theme
+   component intentionally stays as-is (manual mappings + per-post
+   limits) while the `discourse-gbfans-autolink/` plugin in this repo
+   takes over automatic linking during post cooking/rebaking — see
+   `docs/PLUGIN_ASSESSMENT.md` and the plugin README, including the
+   step-by-step migration off this component.
