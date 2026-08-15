@@ -86,6 +86,19 @@ RSpec.describe Jobs::SitemapAutolinkSync do
     expect(Jobs::SitemapAutolinkRebakePosts.jobs.size).to eq(0)
   end
 
+  it "labels stale unfinished runs as interrupted instead of leaving them unexplained" do
+    orphan =
+      SitemapAutolinkSyncRun.create!(started_at: 3.hours.ago, triggered_by: "manual")
+    fresh =
+      SitemapAutolinkSyncRun.create!(started_at: 5.minutes.ago, triggered_by: "manual")
+
+    described_class.new.execute(triggered_by: "manual")
+
+    expect(orphan.reload.success).to be(false)
+    expect(orphan.error_details).to include("interrupted")
+    expect(fresh.reload.error_details).to be_nil
+  end
+
   it "does not enqueue a rebake job when nothing changed" do
     SiteSetting.sitemap_autolink_auto_rebake_on_changes = true
     report[:phrases_added] = []

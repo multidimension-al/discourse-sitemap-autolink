@@ -14,9 +14,35 @@ module Jobs
       return if !SiteSetting.sitemap_autolink_sync_enabled && triggered_by == "schedule"
       return if SiteSetting.sitemap_autolink_sources.blank?
 
+      # A deploy/rebuild or Sidekiq restart can kill a sync mid-run
+      # (shutdown interrupts bypass normal error handling), leaving its
+      # audit row open with no counts and no error. Label those so they
+      # don't sit in the history as unexplained failures.
+      SitemapAutolinkSyncRun
+        .where(finished_at: nil, error_details: nil)
+        .where("started_at < ?", 2.hours.ago)
+        .update_all(
+          success: false,
+          error_details:
+            "interrupted: the server restarted mid-run (deploy/rebuild or " \
+              "Sidekiq restart); the sync did not finish and recorded no counts",
+        )
+
       _run, report =
-        SitemapAutolinkSyncRun.record(triggered_by: triggered_by) do
-          SitemapAutolink::SitemapSync.new.run!
+        SitemapAutolinkSyncRun.record(triggered_by: triggered_by) do |run|
+          # Mirror progress into the run row (at most every 10s) so the
+          # admin page shows a climbing URL count for a Running… sync —
+          # a frozen count means a stalled run, a climbing one means
+          # "working, be patient".
+          last_update = 0.0
+          on_progress = ->(seen) do
+            mono = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            if mono - last_update >= 10
+              last_update = mono
+              run.update_columns(urls_seen: seen)
+            end
+          end
+          SitemapAutolink::SitemapSync.new(on_progress: on_progress).run!
         end
 
       Rails.logger.info(

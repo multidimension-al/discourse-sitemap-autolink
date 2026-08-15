@@ -6,9 +6,11 @@
 class SitemapAutolinkSyncRun < ActiveRecord::Base
   scope :recent, -> { order(started_at: :desc) }
 
+  # Yields the freshly created run row so the caller can stream live
+  # progress into it while the sync works (the admin UI polls it).
   def self.record(triggered_by:)
     run = create!(started_at: Time.zone.now, triggered_by: triggered_by)
-    report = yield
+    report = yield run
     run.update!(
       finished_at: Time.zone.now,
       success: report[:errors].blank?,

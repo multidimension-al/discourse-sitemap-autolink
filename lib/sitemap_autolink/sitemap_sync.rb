@@ -15,6 +15,11 @@ module SitemapAutolink
     USER_AGENT = "discourse-sitemap-autolink/0.2 (catalog sync)"
     MAX_TITLE_BYTES = 524_288
     MAX_INDEX_CHILDREN = 100
+    # Hard wall-clock cap for ONE HTTP fetch. Net::HTTP's read_timeout
+    # resets on every byte received, so a tarpitting server that drips
+    # a byte every few seconds can otherwise pin a fetch (and the whole
+    # sync) indefinitely.
+    MAX_FETCH_SECONDS = 30
 
     attr_reader :report
 
@@ -23,12 +28,20 @@ module SitemapAutolink
     # title_suffixes: strings stripped from the end of page titles.
     # excluded_url_patterns: see UrlFilter (substring or * wildcard).
     # user_agent: override the identifying UA if a site's WAF needs it.
+    # page_fetch_delay_ms: politeness pause between page (title) fetches.
+    # time_budget_minutes: overall cap for one run; the next run resumes.
+    # on_progress: ->(seen_count) called after each processed URL, so the
+    #   caller can surface live progress (the job mirrors it into the
+    #   sync-run row for the admin UI).
     # http_get: injectable ->(url, max_bytes) { body_string_or_nil } for tests.
     def initialize(
       sources: nil,
       title_suffixes: nil,
       excluded_url_patterns: nil,
       user_agent: nil,
+      page_fetch_delay_ms: nil,
+      time_budget_minutes: nil,
+      on_progress: nil,
       http_get: nil
     )
       @sources = sources || parse_sources(SiteSetting.sitemap_autolink_sources)
@@ -53,6 +66,17 @@ module SitemapAutolink
             ),
         )
       @user_agent = user_agent || USER_AGENT
+      @page_fetch_delay =
+        (
+          page_fetch_delay_ms ||
+            (defined?(SiteSetting) ? SiteSetting.sitemap_autolink_page_fetch_delay_ms : 0)
+        ).to_i / 1000.0
+      @time_budget_minutes =
+        (
+          time_budget_minutes ||
+            (defined?(SiteSetting) ? SiteSetting.sitemap_autolink_sync_time_budget_minutes : 30)
+        ).to_f
+      @on_progress = on_progress
       @http_get = http_get || method(:default_http_get)
       @report = {
         seen: 0,
@@ -73,15 +97,24 @@ module SitemapAutolink
     def run!
       now = Time.zone.now
       seen_urls = Set.new
+      @deadline = monotime + @time_budget_minutes * 60
+      out_of_time = false
 
       @sources.each do |source|
+        break if out_of_time
         begin
           entries = fetch_sitemap_entries(source[:url])
           if entries.nil?
-            @report[:errors] << "failed to fetch sitemap #{source[:url]}"
+            @report[:errors] << "failed to fetch sitemap #{source[:url]} (unreachable or incomplete)"
             next
           end
           entries.each do |loc, lastmod|
+            if monotime > @deadline
+              @report[:errors] << "stopped at the #{@time_budget_minutes.round}-minute time " \
+                "budget after #{@report[:seen]} URLs; the next sync picks up where this left off"
+              out_of_time = true
+              break
+            end
             url = SitemapAutolinkEntry.normalize_url(loc)
             next if url.empty? || seen_urls.include?(url)
             if UrlFilter.excluded?(url, @url_filter)
@@ -91,11 +124,14 @@ module SitemapAutolink
             seen_urls << url
             @report[:seen] += 1
             sync_entry(url, lastmod, source[:type], now)
+            @on_progress&.call(@report[:seen])
           end
         rescue => e
           @report[:errors] << "#{source[:url]}: #{e.class} #{e.message}"
         end
       end
+
+      reclean_titles
 
       begin
         mark_removed(seen_urls, now) if @report[:errors].empty?
@@ -149,17 +185,21 @@ module SitemapAutolink
     end
 
     # Fetch one configured source. A <sitemapindex> is expanded into its
-    # child sitemaps (one level, same content type).
+    # child sitemaps (one level, same content type). A sitemap missing
+    # its closing tag (truncated by size caps, fetch deadline, or a
+    # broken connection) counts as a FAILED fetch, never a partial
+    # success — a partial URL list would otherwise mark every unlisted
+    # entry as removed from the source.
     def fetch_sitemap_entries(url)
       xml = to_utf8(@http_get.call(url, MAX_TITLE_BYTES * 4))
-      return nil if xml.nil?
+      return nil if xml.nil? || !complete_sitemap?(xml)
       if xml =~ /<sitemapindex[\s>]/i
         children = parse_sitemap(xml).first(MAX_INDEX_CHILDREN)
         entries = []
         children.each do |child_loc, _lastmod|
           child_xml = to_utf8(@http_get.call(child_loc.strip, MAX_TITLE_BYTES * 4))
-          if child_xml.nil?
-            @report[:errors] << "failed to fetch child sitemap #{child_loc}"
+          if child_xml.nil? || !complete_sitemap?(child_xml)
+            @report[:errors] << "failed to fetch child sitemap #{child_loc} (unreachable or incomplete)"
             next
           end
           entries.concat(parse_sitemap(child_xml))
@@ -170,11 +210,19 @@ module SitemapAutolink
       end
     end
 
+    def complete_sitemap?(xml)
+      xml.match?(%r{</\s*(urlset|sitemapindex)\s*>}i)
+    end
+
+    def monotime
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
+
     def sync_entry(url, lastmod, content_type, now)
       entry = SitemapAutolinkEntry.find_by(url: url)
 
       if entry.nil?
-        title, title_source = resolve_title(url)
+        title, title_source = throttled_resolve_title(url)
         entry =
           SitemapAutolinkEntry.create!(
             url: url,
@@ -208,7 +256,7 @@ module SitemapAutolink
       changed = lastmod.present? && lastmod != entry.lastmod
       slug_title = entry.title_source == "slug"
       if changed || slug_title
-        title, title_source = resolve_title(url)
+        title, title_source = throttled_resolve_title(url)
         if title_source == "page" && title != entry.title
           entry.update!(
             title: title,
@@ -286,6 +334,16 @@ module SitemapAutolink
       body.dup.force_encoding(Encoding::UTF_8).scrub("")
     end
 
+    # Politeness spacing for the per-page title fetches during a real
+    # sync: without it, a first import of hundreds/thousands of URLs is
+    # a request burst that firewalls read as scraping (and may answer by
+    # banning the forum's IP). Sitemap fetches and dry-run previews
+    # (bounded samples) are not delayed.
+    def throttled_resolve_title(url)
+      sleep(@page_fetch_delay) if @page_fetch_delay.positive?
+      resolve_title(url)
+    end
+
     def resolve_title(url)
       body = to_utf8(@http_get.call(url, MAX_TITLE_BYTES))
       title = body && title_from_html(body)
@@ -299,13 +357,39 @@ module SitemapAutolink
           html[/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i, 1] ||
           html[%r{<title[^>]*>([^<]+)</title>}i, 1]
       return nil if raw.nil?
-      title = CGI.unescapeHTML(raw).strip
+      clean_title(CGI.unescapeHTML(raw))
+    end
+
+    # Shared title hygiene: drop backslash-escaping of quotes leaking
+    # from the source CMS (PHP addslashes artifacts like "Mattel\'s"),
+    # then strip the configured suffixes repeatedly.
+    def clean_title(raw)
+      return nil if raw.nil?
+      title = raw.gsub(/\\+(['"])/, '\1').strip
       loop do
         stripped = @title_suffixes.find { |s| s.present? && title.downcase.end_with?(s.downcase) }
         break if stripped.nil?
         title = title[0, title.length - stripped.length].strip
       end
       title.presence
+    end
+
+    # Title hygiene is settings-driven, so re-apply it to STORED titles
+    # on every run (no page fetches): a suffix pattern configured after
+    # entries were ingested would otherwise stay baked into their titles
+    # (and phrases) until the page's lastmod happened to change.
+    def reclean_titles
+      SitemapAutolinkEntry
+        .where(auto_discovered: true, removed_from_source: false)
+        .find_each do |entry|
+          cleaned = clean_title(entry.title)
+          next if cleaned.blank? || cleaned == entry.title
+          entry.update!(title: cleaned)
+          regenerate_terms(entry)
+          @report[:title_changed] << entry.url
+        end
+    rescue => e
+      @report[:errors] << "reclean_titles: #{e.class} #{e.message}"
     end
 
     def title_from_slug(url)
@@ -360,9 +444,11 @@ module SitemapAutolink
             return default_http_get(URI.join(url, location).to_s, max_bytes, redirects_left - 1)
           end
           return nil unless response.is_a?(Net::HTTPSuccess)
+          fetch_deadline = monotime + MAX_FETCH_SECONDS
           response.read_body do |chunk|
             body << chunk
             break if body.bytesize >= max_bytes
+            break if monotime > fetch_deadline
             break if body.include?("</title>")
           end
         end
