@@ -26,12 +26,38 @@ module Jobs
           "#{report[:errors].size} errors",
       )
 
-      if SiteSetting.sitemap_autolink_auto_rebake_on_changes
-        phrases = (report[:phrases_added] + report[:phrases_removed]).uniq
-        phrases.each do |phrase|
-          Jobs.enqueue(:sitemap_autolink_selective_rebake, phrase: phrase)
-        end
+      auto_rebake(report)
+    end
+
+    private
+
+    # ONE batched job per sync, never one per phrase — and none at all
+    # for catalog-scale change sets (an initial import can add thousands
+    # of phrases; auto-rebaking that would amount to a full-forum rebake,
+    # which stays a deliberate admin action).
+    def auto_rebake(report)
+      return if !SiteSetting.sitemap_autolink_auto_rebake_on_changes
+
+      phrases = (report[:phrases_added] + report[:phrases_removed]).uniq
+      return if phrases.empty?
+
+      max_phrases = SiteSetting.sitemap_autolink_auto_rebake_max_phrases
+      if phrases.size > max_phrases
+        Rails.logger.warn(
+          "sitemap-autolink sync: #{phrases.size} phrases changed, above " \
+            "sitemap_autolink_auto_rebake_max_phrases (#{max_phrases}) — skipping " \
+            "the automatic rebake. This is expected on an initial catalog import; " \
+            "existing posts pick up links when next edited or rebaked (e.g. a " \
+            "deliberate `rake posts:rebake`, or per-phrase rebakes via the admin API).",
+        )
+        return
       end
+
+      Jobs.enqueue(
+        :sitemap_autolink_rebake_posts,
+        phrases: phrases,
+        max_posts: SiteSetting.sitemap_autolink_auto_rebake_max_posts,
+      )
     end
   end
 end

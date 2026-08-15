@@ -2,7 +2,7 @@
 
 # name: discourse-sitemap-autolink
 # about: Automatically links the first mention of your site's pages (products, wiki articles, docs, …) in posts, driven by a sitemap-synced server-side catalog.
-# version: 0.2.0
+# version: 0.3.0
 # authors: AJ Quick
 # url: https://github.com/ajquick/discourse-sitemap-autolink
 # required_version: 3.4.0
@@ -28,6 +28,7 @@ after_initialize do
   require_relative "app/models/sitemap_autolink_term"
   require_relative "app/models/sitemap_autolink_sync_run"
   require_relative "app/jobs/scheduled/sitemap_autolink_sync"
+  require_relative "app/jobs/regular/sitemap_autolink_rebake_posts"
   require_relative "app/jobs/regular/sitemap_autolink_selective_rebake"
   require_relative "app/controllers/sitemap_autolink_admin_controller"
 
@@ -73,6 +74,7 @@ after_initialize do
       post "entries" => "sitemap_autolink_admin#create_entry"
       put "entries/:id" => "sitemap_autolink_admin#update_entry"
       post "terms" => "sitemap_autolink_admin#create_term"
+      put "terms/bulk" => "sitemap_autolink_admin#bulk_terms"
       put "terms/:id" => "sitemap_autolink_admin#update_term"
       delete "terms/:id" => "sitemap_autolink_admin#destroy_term"
       get "collisions" => "sitemap_autolink_admin#collisions"

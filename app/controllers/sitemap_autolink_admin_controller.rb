@@ -32,6 +32,8 @@ class SitemapAutolinkAdminController < Admin::AdminController
              active_entries: SitemapAutolinkEntry.active.count,
              terms: SitemapAutolinkTerm.count,
              pending_terms: SitemapAutolinkTerm.pending_review.count,
+             entry_types: SitemapAutolinkEntry.distinct.order(:content_type).pluck(:content_type),
+             enabled_types_setting: SiteSetting.sitemap_autolink_enabled_types,
              last_run: last_run && serialize_run(last_run),
            }
   end
@@ -68,13 +70,33 @@ class SitemapAutolinkAdminController < Admin::AdminController
           q: q,
         )
     end
+    if params[:pending] == "true"
+      scope =
+        scope.where(
+          id: SitemapAutolinkTerm.pending_review.select(:entry_id),
+        )
+    end
     page = params[:page].to_i.clamp(0, 10_000)
+    total = scope.count
     render json: {
-             total: scope.count,
+             total: total,
              page: page,
+             per_page: PAGE_SIZE,
+             pages: (total.to_f / PAGE_SIZE).ceil,
+             types: SitemapAutolinkEntry.distinct.order(:content_type).pluck(:content_type),
              entries:
                scope.offset(page * PAGE_SIZE).limit(PAGE_SIZE).map { |e| serialize_entry(e) },
            }
+  end
+
+  # Bulk state change for terms, e.g. clearing a large review queue.
+  def bulk_terms
+    ids = Array(params[:ids]).map(&:to_i).first(500)
+    state = params.require(:state)
+    raise Discourse::InvalidParameters.new(:state) if !SitemapAutolinkTerm.states.key?(state)
+    updated = SitemapAutolinkTerm.where(id: ids).update_all(state: SitemapAutolinkTerm.states[state], updated_at: Time.zone.now)
+    bump
+    render json: success_json.merge(updated: updated)
   end
 
   def create_entry
@@ -171,7 +193,10 @@ class SitemapAutolinkAdminController < Admin::AdminController
         .includes(:entry)
         .order(:normalized_phrase)
         .limit(500)
-    render json: { pending: terms.map { |t| serialize_term(t) } }
+    render json: {
+             total: SitemapAutolinkTerm.pending_review.count,
+             pending: terms.map { |t| serialize_term(t, entry: t.entry) },
+           }
   end
 
   def sync
@@ -191,7 +216,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
       render json: failed_json.merge(error: "use `rake posts:rebake` for a full rebake"),
              status: 422
     elsif params[:phrase].present?
-      Jobs.enqueue(:sitemap_autolink_selective_rebake, phrase: params[:phrase])
+      Jobs.enqueue(:sitemap_autolink_rebake_posts, phrases: [params[:phrase]])
       render json: success_json
     else
       render json: failed_json, status: 422
@@ -240,8 +265,8 @@ class SitemapAutolinkAdminController < Admin::AdminController
     }
   end
 
-  def serialize_term(term)
-    {
+  def serialize_term(term, entry: nil)
+    result = {
       id: term.id,
       entry_id: term.entry_id,
       phrase: term.phrase,
@@ -250,5 +275,11 @@ class SitemapAutolinkAdminController < Admin::AdminController
       origin: term.origin,
       review_reason: term.review_reason,
     }
+    if entry
+      result[:entry_url] = entry.url
+      result[:entry_title] = entry.title
+      result[:entry_type] = entry.content_type
+    end
+    result
   end
 end

@@ -68,31 +68,42 @@ module SitemapAutolink
       }
     end
 
+    # Never raises: any failure lands in report[:errors] so the sync-run
+    # audit row always records what happened, including partial progress.
     def run!
       now = Time.zone.now
       seen_urls = Set.new
 
       @sources.each do |source|
-        entries = fetch_sitemap_entries(source[:url])
-        if entries.nil?
-          @report[:errors] << "failed to fetch sitemap #{source[:url]}"
-          next
-        end
-        entries.each do |loc, lastmod|
-          url = SitemapAutolinkEntry.normalize_url(loc)
-          next if url.empty? || seen_urls.include?(url)
-          if UrlFilter.excluded?(url, @url_filter)
-            @report[:excluded] += 1
+        begin
+          entries = fetch_sitemap_entries(source[:url])
+          if entries.nil?
+            @report[:errors] << "failed to fetch sitemap #{source[:url]}"
             next
           end
-          seen_urls << url
-          @report[:seen] += 1
-          sync_entry(url, lastmod, source[:type], now)
+          entries.each do |loc, lastmod|
+            url = SitemapAutolinkEntry.normalize_url(loc)
+            next if url.empty? || seen_urls.include?(url)
+            if UrlFilter.excluded?(url, @url_filter)
+              @report[:excluded] += 1
+              next
+            end
+            seen_urls << url
+            @report[:seen] += 1
+            sync_entry(url, lastmod, source[:type], now)
+          end
+        rescue => e
+          @report[:errors] << "#{source[:url]}: #{e.class} #{e.message}"
         end
       end
 
-      mark_removed(seen_urls, now) if @report[:errors].empty?
+      begin
+        mark_removed(seen_urls, now) if @report[:errors].empty?
+      rescue => e
+        @report[:errors] << "mark_removed: #{e.class} #{e.message}"
+      end
       Catalog.bump_version!
+      @report[:errors].each { |e| Rails.logger.warn("sitemap-autolink sync: #{e}") } if defined?(Rails)
       @report
     end
 
@@ -140,13 +151,13 @@ module SitemapAutolink
     # Fetch one configured source. A <sitemapindex> is expanded into its
     # child sitemaps (one level, same content type).
     def fetch_sitemap_entries(url)
-      xml = @http_get.call(url, MAX_TITLE_BYTES * 4)
+      xml = to_utf8(@http_get.call(url, MAX_TITLE_BYTES * 4))
       return nil if xml.nil?
       if xml =~ /<sitemapindex[\s>]/i
         children = parse_sitemap(xml).first(MAX_INDEX_CHILDREN)
         entries = []
         children.each do |child_loc, _lastmod|
-          child_xml = @http_get.call(child_loc.strip, MAX_TITLE_BYTES * 4)
+          child_xml = to_utf8(@http_get.call(child_loc.strip, MAX_TITLE_BYTES * 4))
           if child_xml.nil?
             @report[:errors] << "failed to fetch child sitemap #{child_loc}"
             next
@@ -185,6 +196,13 @@ module SitemapAutolink
         entry.update!(removed_from_source: false, last_seen_at: now)
         @report[:restored] << url
         @report[:phrases_added].concat(active_phrases(entry))
+      end
+
+      # A source's content type is authoritative for auto-discovered
+      # entries: fixing the type in sitemap_autolink_sources re-types
+      # existing entries on the next sync.
+      if entry.auto_discovered && entry.content_type != content_type
+        entry.update!(content_type: content_type)
       end
 
       changed = lastmod.present? && lastmod != entry.lastmod
@@ -260,8 +278,16 @@ module SitemapAutolink
       entry.terms.linkable.pluck(:normalized_phrase)
     end
 
+    # HTTP bodies may arrive as raw binary; normalize to valid UTF-8
+    # before any text processing (bad byte sequences become "").
+    def to_utf8(body)
+      return body if body.nil?
+      return body if body.encoding == Encoding::UTF_8 && body.valid_encoding?
+      body.dup.force_encoding(Encoding::UTF_8).scrub("")
+    end
+
     def resolve_title(url)
-      body = @http_get.call(url, MAX_TITLE_BYTES)
+      body = to_utf8(@http_get.call(url, MAX_TITLE_BYTES))
       title = body && title_from_html(body)
       return [title, "page"] if title.present?
       [title_from_slug(url), "slug"]
@@ -313,9 +339,12 @@ module SitemapAutolink
 
     # Streaming GET with an identifying UA, redirect following and an
     # early abort once enough of the page arrived to contain the title.
+    # Accumulates in binary (chunks arrive as ASCII-8BIT; mixing them
+    # into a UTF-8 string raises Encoding::CompatibilityError on pages
+    # with typographic characters); callers convert via to_utf8.
     def default_http_get(url, max_bytes, redirects_left = 3)
       uri = URI.parse(url)
-      body = +""
+      body = +"".b
       Net::HTTP.start(
         uri.host,
         uri.port,

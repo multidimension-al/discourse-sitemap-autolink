@@ -55,6 +55,14 @@ plugins:
     default: false
   sitemap_autolink_auto_rebake_on_changes:
     default: false
+  sitemap_autolink_auto_rebake_max_phrases:
+    default: 50
+    min: 1
+    max: 10000
+  sitemap_autolink_auto_rebake_max_posts:
+    default: 500
+    min: 1
+    max: 100000
   sitemap_autolink_max_rebakes_per_job_run:
     default: 200
     min: 10

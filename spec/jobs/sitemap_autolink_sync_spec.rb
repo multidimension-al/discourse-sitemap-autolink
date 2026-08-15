@@ -58,12 +58,38 @@ RSpec.describe Jobs::SitemapAutolinkSync do
     }.by(1)
   end
 
-  it "enqueues selective rebakes for phrase changes when enabled" do
+  it "enqueues ONE batched rebake job for all phrase changes when enabled" do
     SiteSetting.sitemap_autolink_auto_rebake_on_changes = true
-    expect_enqueued_with(job: :sitemap_autolink_selective_rebake, args: { phrase: "p1" }) do
-      expect_enqueued_with(job: :sitemap_autolink_selective_rebake, args: { phrase: "p2" }) do
-        described_class.new.execute({})
-      end
-    end
+    SiteSetting.sitemap_autolink_auto_rebake_max_posts = 500
+    expect_enqueued_with(
+      job: :sitemap_autolink_rebake_posts,
+      args: {
+        phrases: %w[p1 p2],
+        max_posts: 500,
+      },
+    ) { described_class.new.execute({}) }
+  end
+
+  it "does not enqueue per-phrase jobs" do
+    SiteSetting.sitemap_autolink_auto_rebake_on_changes = true
+    described_class.new.execute({})
+    expect(
+      Jobs::SitemapAutolinkSelectiveRebake.jobs.size,
+    ).to eq(0)
+  end
+
+  it "skips auto-rebake entirely for catalog-scale phrase changes" do
+    SiteSetting.sitemap_autolink_auto_rebake_on_changes = true
+    SiteSetting.sitemap_autolink_auto_rebake_max_phrases = 3
+    report[:phrases_added] = %w[p1 p2 p3 p4]
+    described_class.new.execute({})
+    expect(Jobs::SitemapAutolinkRebakePosts.jobs.size).to eq(0)
+  end
+
+  it "does not enqueue a rebake job when nothing changed" do
+    SiteSetting.sitemap_autolink_auto_rebake_on_changes = true
+    report[:phrases_added] = []
+    described_class.new.execute({})
+    expect(Jobs::SitemapAutolinkRebakePosts.jobs.size).to eq(0)
   end
 end
