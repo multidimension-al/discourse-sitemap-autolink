@@ -44,6 +44,9 @@ plugins:
   sitemap_autolink_title_suffixes:
     default: ""
     type: list
+  sitemap_autolink_excluded_url_patterns:
+    default: ""
+    type: list
   sitemap_autolink_excluded_terms:
     default: ""
     type: list

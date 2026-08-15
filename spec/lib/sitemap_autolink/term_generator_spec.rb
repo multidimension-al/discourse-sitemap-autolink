@@ -62,6 +62,12 @@ RSpec.describe SitemapAutolink::TermGenerator do
     expect(result.map { |c| c[:reason] }).to include("generic_word")
   end
 
+  it "sends short all-common-word phrases to review" do
+    result = described_class.generate("Episode Guide", "wiki", settings)
+    expect(active(result)).to be_empty
+    expect(result.map { |c| c[:reason] }).to include("generic_words")
+  end
+
   it "drops globally excluded terms entirely" do
     excluded = settings.merge(excluded_terms: Set.new(["widget kit"]))
     result = described_class.generate("Widget Kit", "wiki", excluded)

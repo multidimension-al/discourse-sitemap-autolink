@@ -57,6 +57,11 @@ module SitemapAutolink
       if words.size == 1 && COMMON_SINGLE_WORDS.include?(singular(phrase))
         return { phrase: raw, state: :pending_review, reason: "generic_word" }
       end
+      # Short phrases made ENTIRELY of common words ("Episode Guide",
+      # "Board Games") are weak global keywords too.
+      if words.size <= 2 && words.all? { |w| COMMON_SINGLE_WORDS.include?(singular(w)) }
+        return { phrase: raw, state: :pending_review, reason: "generic_words" }
+      end
       # Short generated phrases are risky as global keywords regardless of
       # content type; model-number style tokens (letters+digits) are
       # distinctive enough to pass.

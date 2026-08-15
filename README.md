@@ -69,6 +69,31 @@ read-only) in the clone URL —
 The plugin is **disabled after install** (`sitemap_autolink_enabled`
 off) — it does nothing until you enable it, so installing is safe.
 
+## Seeing what it does
+
+Nothing here is a black box — every stage has a visible surface:
+
+- **Admin page** — Admin → Plugins → Sitemap Autolink → **Catalog**:
+  status summary, a **“Preview (dry run)”** button showing exactly what
+  the next sync would ingest (URL counts, pattern exclusions, resolved
+  titles, proposed phrases with review states), a **“Sync now”**
+  button, the full **synchronization history** (every run: when, what
+  was fetched, added/retitled/removed counts, errors), the searchable
+  **catalog** (every entry with its phrases; enable/disable inline),
+  the **pending-review queue** (approve/disable each proposed phrase),
+  and the **collision report**.
+- **Sync audit trail** — every run is stored in
+  `sitemap_autolink_sync_runs` (also `GET
+  /admin/plugins/sitemap-autolink/runs`), plus a summary line in
+  `/logs`.
+- **Dry run without installing anything**:
+  `ruby script/preview_sync.rb --source "https://example.com/sitemap.xml,content" --limit 10`
+  fetches real sitemaps and prints what would be ingested and linked —
+  plain Ruby, no Discourse, nothing written.
+- **Console tooling** — `rake sitemap_autolink:report` (status, runs,
+  sample entries, pending queue), `rake sitemap_autolink:preview[20]`,
+  `rake sitemap_autolink:sync`.
+
 ## Getting started
 
 1. Set `sitemap_autolink_manual_mappings` with a couple of test rules,
@@ -107,6 +132,7 @@ off) — it does nothing until you enable it, so installing is safe.
 | `sitemap_autolink_min_phrase_length` / `_min_phrase_words` | 5 / 2 | review gates for generated phrases |
 | `sitemap_autolink_generate_plurals` | on | simple plural variants |
 | `sitemap_autolink_title_suffixes` | – | strip site boilerplate from fetched titles |
+| `sitemap_autolink_excluded_url_patterns` | – | never ingest matching sitemap URLs (substring or `*` wildcard, e.g. `*/checkout*`) |
 | `sitemap_autolink_excluded_terms` | – | never auto-generate these phrases |
 | `sitemap_autolink_sync_enabled` | off | daily sitemap → catalog job |
 | `sitemap_autolink_auto_rebake_on_changes` | off | selective rebakes after sync |

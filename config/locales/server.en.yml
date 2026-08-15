@@ -14,6 +14,7 @@ en:
     sitemap_autolink_min_phrase_words: "Generated phrases with fewer words than this go to review (model-number style tokens containing letters and digits are exempt)."
     sitemap_autolink_generate_plurals: "Also generate simple plural variants of titles as matching phrases."
     sitemap_autolink_title_suffixes: "Suffixes stripped from the end of fetched page titles, one per entry (e.g. ' - Example Shop', ' | Example.com')."
+    sitemap_autolink_excluded_url_patterns: "Sitemap URLs matching any of these patterns are never ingested. Plain text matches as a substring; use * as a wildcard (e.g. '*/checkout*', 'https://example.com/tag/*')."
     sitemap_autolink_excluded_terms: "Phrases that must never be auto-generated as link terms. Manual aliases override this list."
     sitemap_autolink_sync_enabled: "Run the daily sitemap-to-catalog synchronization job."
     sitemap_autolink_auto_rebake_on_changes: "After a sync, enqueue selective rebakes of posts likely affected by added/removed phrases."

@@ -2,6 +2,8 @@
 
 require "net/http"
 require "uri"
+require "cgi"
+require_relative "url_filter"
 
 module SitemapAutolink
   # Periodic catalog synchronization: fetch the configured sitemaps
@@ -19,8 +21,16 @@ module SitemapAutolink
     # sources: [{ url:, type: }]; defaults to the site setting
     #   ("https://example.com/sitemap-products.xml,products|…").
     # title_suffixes: strings stripped from the end of page titles.
+    # excluded_url_patterns: see UrlFilter (substring or * wildcard).
+    # user_agent: override the identifying UA if a site's WAF needs it.
     # http_get: injectable ->(url, max_bytes) { body_string_or_nil } for tests.
-    def initialize(sources: nil, title_suffixes: nil, http_get: nil)
+    def initialize(
+      sources: nil,
+      title_suffixes: nil,
+      excluded_url_patterns: nil,
+      user_agent: nil,
+      http_get: nil
+    )
       @sources = sources || parse_sources(SiteSetting.sitemap_autolink_sources)
       @title_suffixes =
         title_suffixes ||
@@ -31,9 +41,22 @@ module SitemapAutolink
               []
             end
           )
+      @url_filter =
+        UrlFilter.compile(
+          excluded_url_patterns ||
+            (
+              if defined?(SiteSetting)
+                SiteSetting.sitemap_autolink_excluded_url_patterns.split("|")
+              else
+                []
+              end
+            ),
+        )
+      @user_agent = user_agent || USER_AGENT
       @http_get = http_get || method(:default_http_get)
       @report = {
         seen: 0,
+        excluded: 0,
         added: [],
         title_changed: [],
         removed: [],
@@ -41,6 +64,7 @@ module SitemapAutolink
         phrases_added: [],
         phrases_removed: [],
         errors: [],
+        sources: @sources.map { |s| "#{s[:url]} (#{s[:type]})" },
       }
     end
 
@@ -57,6 +81,10 @@ module SitemapAutolink
         entries.each do |loc, lastmod|
           url = SitemapAutolinkEntry.normalize_url(loc)
           next if url.empty? || seen_urls.include?(url)
+          if UrlFilter.excluded?(url, @url_filter)
+            @report[:excluded] += 1
+            next
+          end
           seen_urls << url
           @report[:seen] += 1
           sync_entry(url, lastmod, source[:type], now)
@@ -66,6 +94,47 @@ module SitemapAutolink
       mark_removed(seen_urls, now) if @report[:errors].empty?
       Catalog.bump_version!
       @report
+    end
+
+    # Dry run: fetch the configured sitemaps for real, resolve titles and
+    # generate phrases for a SAMPLE of URLs — without writing anything.
+    # This is the "show me it works" mode, exposed via the admin API,
+    # the admin UI, rake sitemap_autolink:preview and script/preview_sync.rb.
+    def preview(limit_per_source: 10, term_settings: nil)
+      term_settings ||= TermGenerator.default_settings
+      result = { sources: [], errors: [] }
+      @sources.each do |source|
+        entries = fetch_sitemap_entries(source[:url])
+        if entries.nil?
+          result[:errors] << "failed to fetch sitemap #{source[:url]}"
+          next
+        end
+        urls = entries.map { |loc, _| loc.strip }.uniq
+        excluded = urls.select { |u| UrlFilter.excluded?(u, @url_filter) }
+        eligible = urls - excluded
+        sampled =
+          eligible.first(limit_per_source).map do |url|
+            title, title_source = resolve_title(url)
+            {
+              url: url,
+              title: title,
+              title_source: title_source,
+              phrases:
+                TermGenerator.generate(title.to_s, source[:type], term_settings).map do |c|
+                  { phrase: c[:phrase], state: c[:state].to_s, reason: c[:reason] }
+                end,
+            }
+          end
+        result[:sources] << {
+          sitemap: source[:url],
+          type: source[:type],
+          total_urls: urls.size,
+          excluded_by_pattern: excluded.size,
+          excluded_sample: excluded.first(10),
+          sampled: sampled,
+        }
+      end
+      result
     end
 
     # Fetch one configured source. A <sitemapindex> is expanded into its
@@ -254,7 +323,7 @@ module SitemapAutolink
         open_timeout: 10,
         read_timeout: 20,
       ) do |http|
-        request = Net::HTTP::Get.new(uri, "User-Agent" => USER_AGENT, "Accept" => "text/html,application/xml")
+        request = Net::HTTP::Get.new(uri, "User-Agent" => @user_agent, "Accept" => "text/html,application/xml")
         http.request(request) do |response|
           if response.is_a?(Net::HTTPRedirection) && redirects_left.positive?
             location = response["location"]

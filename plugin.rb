@@ -16,6 +16,9 @@ end
 require_relative "lib/sitemap_autolink/matcher"
 require_relative "lib/sitemap_autolink/ruleset"
 require_relative "lib/sitemap_autolink/link_applier"
+require_relative "lib/sitemap_autolink/url_filter"
+
+add_admin_route "sitemap_autolink.title", "discourse-sitemap-autolink", use_new_show_route: true
 
 after_initialize do
   require_relative "lib/sitemap_autolink/catalog"
@@ -23,6 +26,7 @@ after_initialize do
   require_relative "lib/sitemap_autolink/sitemap_sync"
   require_relative "app/models/sitemap_autolink_entry"
   require_relative "app/models/sitemap_autolink_term"
+  require_relative "app/models/sitemap_autolink_sync_run"
   require_relative "app/jobs/scheduled/sitemap_autolink_sync"
   require_relative "app/jobs/regular/sitemap_autolink_selective_rebake"
   require_relative "app/controllers/sitemap_autolink_admin_controller"
@@ -64,6 +68,8 @@ after_initialize do
         get "collisions" => "sitemap_autolink_admin#collisions"
         get "pending" => "sitemap_autolink_admin#pending"
         get "status" => "sitemap_autolink_admin#status"
+        get "runs" => "sitemap_autolink_admin#runs"
+        post "preview" => "sitemap_autolink_admin#preview"
         post "sync" => "sitemap_autolink_admin#sync"
         post "rebuild" => "sitemap_autolink_admin#rebuild"
         post "rebake" => "sitemap_autolink_admin#rebake"

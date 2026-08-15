@@ -155,6 +155,49 @@ RSpec.describe SitemapAutolink::SitemapSync do
     expect(entry.title_source).to eq("page")
   end
 
+  it "skips URLs matching excluded patterns and counts them" do
+    responses = {
+      "#{base}/sitemap-products.xml" =>
+        sitemap_xml([["/shop/widget", nil], ["/shop/checkout/basket", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha"),
+    }
+    sync =
+      described_class.new(
+        sources: sources,
+        title_suffixes: [],
+        excluded_url_patterns: ["*/checkout*"],
+        http_get: ->(url, _max) { responses[url] },
+      )
+    report = sync.run!
+    expect(report[:seen]).to eq(1)
+    expect(report[:excluded]).to eq(1)
+    expect(SitemapAutolinkEntry.find_by(url: "#{base}/shop/checkout/basket")).to be_nil
+  end
+
+  it "previews without writing anything" do
+    responses = {
+      "#{base}/sitemap-products.xml" =>
+        sitemap_xml([["/shop/widget-frame-kit", nil], ["/shop/checkout/basket", nil]]),
+      "#{base}/shop/widget-frame-kit" => page_html("Widget Frame Kit"),
+    }
+    sync =
+      described_class.new(
+        sources: sources,
+        title_suffixes: [],
+        excluded_url_patterns: ["*/checkout*"],
+        http_get: ->(url, _max) { responses[url] },
+      )
+    result = sync.preview(limit_per_source: 5)
+
+    expect(SitemapAutolinkEntry.count).to eq(0)
+    source = result[:sources].first
+    expect(source[:total_urls]).to eq(2)
+    expect(source[:excluded_by_pattern]).to eq(1)
+    page = source[:sampled].first
+    expect(page[:title]).to eq("Widget Frame Kit")
+    expect(page[:phrases].map { |p| p[:phrase] }).to include("Widget Frame Kit")
+  end
+
   it "does not mark entries removed when a sitemap fetch errored" do
     responses = {
       "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
