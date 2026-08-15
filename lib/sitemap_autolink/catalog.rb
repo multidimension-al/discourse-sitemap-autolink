@@ -60,6 +60,7 @@ module SitemapAutolink
           SiteSetting.sitemap_autolink_enabled_types,
           SiteSetting.sitemap_autolink_type_priority,
           SiteSetting.sitemap_autolink_excluded_terms,
+          SiteSetting.sitemap_autolink_excluded_url_patterns,
         ].hash
       if @ruleset.nil? || @cached_version != v || @cached_settings != settings_fingerprint
         @ruleset = build_ruleset(v)
@@ -107,6 +108,8 @@ module SitemapAutolink
           .split("|")
           .map { |t| Matcher.normalize(t) }
           .to_set
+      url_filter =
+        UrlFilter.compile(SiteSetting.sitemap_autolink_excluded_url_patterns.split("|"))
 
       scope =
         SitemapAutolinkTerm
@@ -132,6 +135,9 @@ module SitemapAutolink
           # The excluded-terms gate protects against generated noise; an
           # explicit manual alias is an admin decision and passes.
           next if !manual && excluded.include?(phrase)
+          # URL patterns take effect immediately, even for entries
+          # ingested before the pattern was added.
+          next if UrlFilter.excluded?(url, url_filter)
           {
             phrase: phrase,
             url: url,

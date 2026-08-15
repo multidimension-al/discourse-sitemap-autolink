@@ -21,14 +21,39 @@ class SitemapAutolinkAdminController < Admin::AdminController
   PAGE_SIZE = 50
 
   def status
+    last_run = SitemapAutolinkSyncRun.recent.first
     render json: {
+             enabled: SiteSetting.sitemap_autolink_enabled,
+             sync_enabled: SiteSetting.sitemap_autolink_sync_enabled,
+             sources_configured: SiteSetting.sitemap_autolink_sources.present?,
              catalog_version: SitemapAutolink::Catalog.version,
              active_rules: SitemapAutolink::Catalog.ruleset.size,
              entries: SitemapAutolinkEntry.count,
              active_entries: SitemapAutolinkEntry.active.count,
              terms: SitemapAutolinkTerm.count,
              pending_terms: SitemapAutolinkTerm.pending_review.count,
+             last_run: last_run && serialize_run(last_run),
            }
+  end
+
+  # Durable audit trail of sitemap synchronizations.
+  def runs
+    render json: {
+             runs: SitemapAutolinkSyncRun.recent.limit(30).map { |r| serialize_run(r) },
+           }
+  end
+
+  # Dry run against the real sitemaps: nothing is written. Returns what
+  # WOULD be ingested — URL counts, pattern exclusions, resolved titles
+  # and the phrases each title generates (with review states).
+  def preview
+    if SiteSetting.sitemap_autolink_sources.blank?
+      render json: failed_json.merge(error: "configure sitemap_autolink_sources first"),
+             status: 422
+      return
+    end
+    limit = (params[:limit] || 10).to_i.clamp(1, 50)
+    render json: SitemapAutolink::SitemapSync.new.preview(limit_per_source: limit)
   end
 
   def entries
@@ -150,7 +175,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
   end
 
   def sync
-    Jobs.enqueue(:sitemap_autolink_sync)
+    Jobs.enqueue(:sitemap_autolink_sync, triggered_by: "manual")
     render json: success_json
   end
 
@@ -177,6 +202,25 @@ class SitemapAutolinkAdminController < Admin::AdminController
 
   def bump
     SitemapAutolink::Catalog.bump_version!
+  end
+
+  def serialize_run(run)
+    {
+      id: run.id,
+      started_at: run.started_at,
+      finished_at: run.finished_at,
+      success: run.success,
+      triggered_by: run.triggered_by,
+      urls_seen: run.urls_seen,
+      urls_excluded: run.urls_excluded,
+      entries_added: run.entries_added,
+      entries_retitled: run.entries_retitled,
+      entries_removed: run.entries_removed,
+      phrases_added: run.phrases_added,
+      phrases_removed: run.phrases_removed,
+      error_details: run.error_details,
+      sources: run.sources,
+    }
   end
 
   def serialize_entry(entry)
