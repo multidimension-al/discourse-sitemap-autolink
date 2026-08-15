@@ -1,0 +1,18 @@
+en:
+  theme_metadata:
+    description: "Automatically turn configured words and phrases in posts into links."
+    settings:
+      linked_words: >-
+        List of word/phrase → URL mappings. Each entry is
+        "word or phrase, URL" or "/regex/modifiers, URL" ($1…$n insert
+        captured groups into the URL).
+      excluded_tags: "HTML tags whose content is never linkified (a and iframe are always skipped)."
+      excluded_classes: "CSS classes whose elements are never linkified."
+      max_links_per_term_per_post: >-
+        Maximum number of times each destination URL is auto-linked within a
+        single post. 1 links only the first occurrence in the post. 0 removes
+        the per-post limit (legacy behavior: first occurrence per paragraph
+        for words, every occurrence for regular expressions).
+      max_links_per_post: >-
+        Maximum total number of auto-generated links in a single post across
+        all terms. 0 means no total limit.

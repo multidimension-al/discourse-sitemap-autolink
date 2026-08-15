@@ -1,6 +1,16 @@
 linked_words:
   type: list
   default: "discourse,https://www.discourse.org|meta,https://meta.discourse.org"
+max_links_per_term_per_post:
+  type: integer
+  default: 1
+  min: 0
+  max: 1000
+max_links_per_post:
+  type: integer
+  default: 0
+  min: 0
+  max: 1000
 excluded_tags:
   type: list
   list_type: compact

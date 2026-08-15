@@ -1,5 +1,5 @@
 import { withPluginApi } from "discourse/lib/plugin-api";
-import { readInputList, traverseNodes } from "../lib/utilities";
+import { linkifyElement, readInputList } from "../lib/utilities";
 
 export default {
   name: "discourse-linkify-initializer",
@@ -30,7 +30,7 @@ export default {
 
       let createLink = function (text, url) {
         let link = document.createElement("a");
-        link.innerHTML = text;
+        link.textContent = text;
         link.href = url;
         link.rel = "nofollow";
         link.target = "_blank";
@@ -48,13 +48,14 @@ export default {
       let actions = [linkify];
       actions.forEach(readInputList);
 
+      const limits = {
+        maxPerTerm: settings.max_links_per_term_per_post,
+        maxTotal: settings.max_links_per_post,
+      };
+
       api.decorateCookedElement(
         (element) => {
-          actions.forEach((action) => {
-            if (Object.keys(action.inputs).length > 0) {
-              traverseNodes(element, action, skipTags, skipClasses);
-            }
-          });
+          linkifyElement(element, actions, skipTags, skipClasses, limits);
         },
         { id: "linkify-words-theme" }
       );
