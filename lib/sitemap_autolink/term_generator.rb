@@ -95,14 +95,21 @@ module SitemapAutolink
         .each { |v| variants << v.sub(/\Athe\s+/i, "") if v =~ /\Athe\s+/i }
 
       # Conservative plural/singular — only on clean variants; pluralizing
-      # a "Prefix: Name" or "(…)" form just makes noise.
+      # a "Prefix: Name" or "(…)" form just makes noise. Rules operate on
+      # the LAST WORD: "Project Box" -> "Project Boxes" (not "Boxs"), and
+      # short/irregular last words like "Lens" are never singularized.
       variants
         .dup
         .each do |v|
           next if v.include?(":") || v.include?("(")
-          if !v.match?(/s\z/i)
-            variants << "#{v}s" if settings[:generate_plurals]
-          elsif v.length > 5 && !v.match?(/(ss|us|is)\z/i)
+          last = v.split(" ").last.to_s
+          if !last.match?(/s\z/i)
+            if settings[:generate_plurals]
+              variants << (last.match?(/(s|x|z|ch|sh)\z/i) ? "#{v}es" : "#{v}s")
+            end
+          elsif last.match?(/(xes|ses|zes|ches|shes)\z/i)
+            variants << v[0..-3]
+          elsif last.length > 4 && !last.match?(/(ss|us|is|ns)\z/i)
             variants << v[0..-2]
           end
         end

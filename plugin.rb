@@ -73,6 +73,7 @@ after_initialize do
       post "entries" => "sitemap_autolink_admin#create_entry"
       put "entries/:id" => "sitemap_autolink_admin#update_entry"
       post "terms" => "sitemap_autolink_admin#create_term"
+      put "terms/bulk" => "sitemap_autolink_admin#bulk_terms"
       put "terms/:id" => "sitemap_autolink_admin#update_term"
       delete "terms/:id" => "sitemap_autolink_admin#destroy_term"
       get "collisions" => "sitemap_autolink_admin#collisions"

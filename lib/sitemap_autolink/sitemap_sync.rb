@@ -68,31 +68,42 @@ module SitemapAutolink
       }
     end
 
+    # Never raises: any failure lands in report[:errors] so the sync-run
+    # audit row always records what happened, including partial progress.
     def run!
       now = Time.zone.now
       seen_urls = Set.new
 
       @sources.each do |source|
-        entries = fetch_sitemap_entries(source[:url])
-        if entries.nil?
-          @report[:errors] << "failed to fetch sitemap #{source[:url]}"
-          next
-        end
-        entries.each do |loc, lastmod|
-          url = SitemapAutolinkEntry.normalize_url(loc)
-          next if url.empty? || seen_urls.include?(url)
-          if UrlFilter.excluded?(url, @url_filter)
-            @report[:excluded] += 1
+        begin
+          entries = fetch_sitemap_entries(source[:url])
+          if entries.nil?
+            @report[:errors] << "failed to fetch sitemap #{source[:url]}"
             next
           end
-          seen_urls << url
-          @report[:seen] += 1
-          sync_entry(url, lastmod, source[:type], now)
+          entries.each do |loc, lastmod|
+            url = SitemapAutolinkEntry.normalize_url(loc)
+            next if url.empty? || seen_urls.include?(url)
+            if UrlFilter.excluded?(url, @url_filter)
+              @report[:excluded] += 1
+              next
+            end
+            seen_urls << url
+            @report[:seen] += 1
+            sync_entry(url, lastmod, source[:type], now)
+          end
+        rescue => e
+          @report[:errors] << "#{source[:url]}: #{e.class} #{e.message}"
         end
       end
 
-      mark_removed(seen_urls, now) if @report[:errors].empty?
+      begin
+        mark_removed(seen_urls, now) if @report[:errors].empty?
+      rescue => e
+        @report[:errors] << "mark_removed: #{e.class} #{e.message}"
+      end
       Catalog.bump_version!
+      @report[:errors].each { |e| Rails.logger.warn("sitemap-autolink sync: #{e}") } if defined?(Rails)
       @report
     end
 
@@ -185,6 +196,13 @@ module SitemapAutolink
         entry.update!(removed_from_source: false, last_seen_at: now)
         @report[:restored] << url
         @report[:phrases_added].concat(active_phrases(entry))
+      end
+
+      # A source's content type is authoritative for auto-discovered
+      # entries: fixing the type in sitemap_autolink_sources re-types
+      # existing entries on the next sync.
+      if entry.auto_discovered && entry.content_type != content_type
+        entry.update!(content_type: content_type)
       end
 
       changed = lastmod.present? && lastmod != entry.lastmod
