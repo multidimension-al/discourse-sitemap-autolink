@@ -299,8 +299,50 @@ export default <template>
                   >{{entry.url}}</a></td>
                 <td>
                   {{#each entry.terms as |term|}}
-                    <div>"{{term.phrase}}" <em>({{term.state}})</em></div>
+                    <div class="sitemap-autolink-admin__term">
+                      "{{term.phrase}}"
+                      <em>({{term.state}})</em>
+                      {{#if (eq term.state "disabled")}}
+                        <DButton
+                          @icon="arrow-rotate-left"
+                          @title="sitemap_autolink.admin.enable_phrase"
+                          @action={{fn
+                            @controller.setEntryTermState
+                            entry
+                            term
+                            "approved"
+                          }}
+                          class="btn-flat btn-small"
+                        />
+                      {{else}}
+                        <DButton
+                          @icon="xmark"
+                          @title="sitemap_autolink.admin.disable_phrase"
+                          @action={{fn
+                            @controller.setEntryTermState
+                            entry
+                            term
+                            "disabled"
+                          }}
+                          class="btn-flat btn-small"
+                        />
+                      {{/if}}
+                    </div>
                   {{/each}}
+                  <form
+                    class="sitemap-autolink-admin__add-phrase"
+                    {{on "submit" (fn @controller.addPhrase entry)}}
+                  >
+                    <input
+                      type="text"
+                      placeholder={{i18n
+                        "sitemap_autolink.admin.add_phrase_placeholder"
+                      }}
+                    />
+                    <button type="submit" class="btn btn-small">
+                      {{i18n "sitemap_autolink.admin.add_phrase"}}
+                    </button>
+                  </form>
                 </td>
                 <td>
                   <DButton

@@ -247,4 +247,55 @@ export default class AdminPluginsShowSitemapAutolinkCatalogController extends Co
       popupAjaxError(e);
     }
   }
+
+  #currentEntry(entryId) {
+    return this.entriesData.entries.find((e) => e.id === entryId);
+  }
+
+  #replaceEntryTerms(entryId, terms) {
+    this.entriesData = {
+      ...this.entriesData,
+      entries: this.entriesData.entries.map((e) =>
+        e.id === entryId ? { ...e, terms } : e
+      ),
+    };
+  }
+
+  @action
+  async addPhrase(entry, event) {
+    event.preventDefault();
+    const input = event.target.querySelector("input");
+    const phrase = input?.value?.trim();
+    if (!phrase) {
+      return;
+    }
+    try {
+      const term = await ajax(`${BASE}/terms`, {
+        type: "POST",
+        data: { entry_id: entry.id, phrase },
+      });
+      const current = this.#currentEntry(entry.id);
+      this.#replaceEntryTerms(entry.id, [...current.terms, term]);
+      input.value = "";
+    } catch (e) {
+      popupAjaxError(e);
+    }
+  }
+
+  @action
+  async setEntryTermState(entry, term, state) {
+    try {
+      const updated = await ajax(`${BASE}/terms/${term.id}`, {
+        type: "PUT",
+        data: { state },
+      });
+      const current = this.#currentEntry(entry.id);
+      this.#replaceEntryTerms(
+        entry.id,
+        current.terms.map((t) => (t.id === term.id ? updated : t))
+      );
+    } catch (e) {
+      popupAjaxError(e);
+    }
+  }
 }
