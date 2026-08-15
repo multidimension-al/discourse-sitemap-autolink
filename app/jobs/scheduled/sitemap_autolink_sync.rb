@@ -29,8 +29,20 @@ module Jobs
         )
 
       _run, report =
-        SitemapAutolinkSyncRun.record(triggered_by: triggered_by) do
-          SitemapAutolink::SitemapSync.new.run!
+        SitemapAutolinkSyncRun.record(triggered_by: triggered_by) do |run|
+          # Mirror progress into the run row (at most every 10s) so the
+          # admin page shows a climbing URL count for a Running… sync —
+          # a frozen count means a stalled run, a climbing one means
+          # "working, be patient".
+          last_update = 0.0
+          on_progress = ->(seen) do
+            mono = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            if mono - last_update >= 10
+              last_update = mono
+              run.update_columns(urls_seen: seen)
+            end
+          end
+          SitemapAutolink::SitemapSync.new(on_progress: on_progress).run!
         end
 
       Rails.logger.info(

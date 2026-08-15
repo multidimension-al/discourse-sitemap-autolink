@@ -142,6 +142,7 @@ Nothing here is a black box — every stage has a visible surface:
 | `sitemap_autolink_excluded_terms` | – | never auto-generate these phrases |
 | `sitemap_autolink_sync_enabled` | off | daily sitemap → catalog job |
 | `sitemap_autolink_page_fetch_delay_ms` | 500 | politeness pause between title fetches |
+| `sitemap_autolink_sync_time_budget_minutes` | 30 | max minutes per run; the next run resumes (per-fetch hard cap is 30s) |
 | `sitemap_autolink_auto_rebake_on_changes` | off | one batched rebake job after each sync |
 | `sitemap_autolink_auto_rebake_max_phrases` | 50 | skip auto-rebake when a sync changes more phrases than this (initial imports never mass-rebake) |
 | `sitemap_autolink_auto_rebake_max_posts` | 500 | total posts one sync's rebake wave may touch |

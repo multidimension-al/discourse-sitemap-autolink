@@ -15,6 +15,11 @@ module SitemapAutolink
     USER_AGENT = "discourse-sitemap-autolink/0.2 (catalog sync)"
     MAX_TITLE_BYTES = 524_288
     MAX_INDEX_CHILDREN = 100
+    # Hard wall-clock cap for ONE HTTP fetch. Net::HTTP's read_timeout
+    # resets on every byte received, so a tarpitting server that drips
+    # a byte every few seconds can otherwise pin a fetch (and the whole
+    # sync) indefinitely.
+    MAX_FETCH_SECONDS = 30
 
     attr_reader :report
 
@@ -24,6 +29,10 @@ module SitemapAutolink
     # excluded_url_patterns: see UrlFilter (substring or * wildcard).
     # user_agent: override the identifying UA if a site's WAF needs it.
     # page_fetch_delay_ms: politeness pause between page (title) fetches.
+    # time_budget_minutes: overall cap for one run; the next run resumes.
+    # on_progress: ->(seen_count) called after each processed URL, so the
+    #   caller can surface live progress (the job mirrors it into the
+    #   sync-run row for the admin UI).
     # http_get: injectable ->(url, max_bytes) { body_string_or_nil } for tests.
     def initialize(
       sources: nil,
@@ -31,6 +40,8 @@ module SitemapAutolink
       excluded_url_patterns: nil,
       user_agent: nil,
       page_fetch_delay_ms: nil,
+      time_budget_minutes: nil,
+      on_progress: nil,
       http_get: nil
     )
       @sources = sources || parse_sources(SiteSetting.sitemap_autolink_sources)
@@ -60,6 +71,12 @@ module SitemapAutolink
           page_fetch_delay_ms ||
             (defined?(SiteSetting) ? SiteSetting.sitemap_autolink_page_fetch_delay_ms : 0)
         ).to_i / 1000.0
+      @time_budget_minutes =
+        (
+          time_budget_minutes ||
+            (defined?(SiteSetting) ? SiteSetting.sitemap_autolink_sync_time_budget_minutes : 30)
+        ).to_f
+      @on_progress = on_progress
       @http_get = http_get || method(:default_http_get)
       @report = {
         seen: 0,
@@ -80,15 +97,24 @@ module SitemapAutolink
     def run!
       now = Time.zone.now
       seen_urls = Set.new
+      @deadline = monotime + @time_budget_minutes * 60
+      out_of_time = false
 
       @sources.each do |source|
+        break if out_of_time
         begin
           entries = fetch_sitemap_entries(source[:url])
           if entries.nil?
-            @report[:errors] << "failed to fetch sitemap #{source[:url]}"
+            @report[:errors] << "failed to fetch sitemap #{source[:url]} (unreachable or incomplete)"
             next
           end
           entries.each do |loc, lastmod|
+            if monotime > @deadline
+              @report[:errors] << "stopped at the #{@time_budget_minutes.round}-minute time " \
+                "budget after #{@report[:seen]} URLs; the next sync picks up where this left off"
+              out_of_time = true
+              break
+            end
             url = SitemapAutolinkEntry.normalize_url(loc)
             next if url.empty? || seen_urls.include?(url)
             if UrlFilter.excluded?(url, @url_filter)
@@ -98,6 +124,7 @@ module SitemapAutolink
             seen_urls << url
             @report[:seen] += 1
             sync_entry(url, lastmod, source[:type], now)
+            @on_progress&.call(@report[:seen])
           end
         rescue => e
           @report[:errors] << "#{source[:url]}: #{e.class} #{e.message}"
@@ -158,17 +185,21 @@ module SitemapAutolink
     end
 
     # Fetch one configured source. A <sitemapindex> is expanded into its
-    # child sitemaps (one level, same content type).
+    # child sitemaps (one level, same content type). A sitemap missing
+    # its closing tag (truncated by size caps, fetch deadline, or a
+    # broken connection) counts as a FAILED fetch, never a partial
+    # success — a partial URL list would otherwise mark every unlisted
+    # entry as removed from the source.
     def fetch_sitemap_entries(url)
       xml = to_utf8(@http_get.call(url, MAX_TITLE_BYTES * 4))
-      return nil if xml.nil?
+      return nil if xml.nil? || !complete_sitemap?(xml)
       if xml =~ /<sitemapindex[\s>]/i
         children = parse_sitemap(xml).first(MAX_INDEX_CHILDREN)
         entries = []
         children.each do |child_loc, _lastmod|
           child_xml = to_utf8(@http_get.call(child_loc.strip, MAX_TITLE_BYTES * 4))
-          if child_xml.nil?
-            @report[:errors] << "failed to fetch child sitemap #{child_loc}"
+          if child_xml.nil? || !complete_sitemap?(child_xml)
+            @report[:errors] << "failed to fetch child sitemap #{child_loc} (unreachable or incomplete)"
             next
           end
           entries.concat(parse_sitemap(child_xml))
@@ -177,6 +208,14 @@ module SitemapAutolink
       else
         parse_sitemap(xml)
       end
+    end
+
+    def complete_sitemap?(xml)
+      xml.match?(%r{</\s*(urlset|sitemapindex)\s*>}i)
+    end
+
+    def monotime
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
     def sync_entry(url, lastmod, content_type, now)
@@ -405,9 +444,11 @@ module SitemapAutolink
             return default_http_get(URI.join(url, location).to_s, max_bytes, redirects_left - 1)
           end
           return nil unless response.is_a?(Net::HTTPSuccess)
+          fetch_deadline = monotime + MAX_FETCH_SECONDS
           response.read_body do |chunk|
             body << chunk
             break if body.bytesize >= max_bytes
+            break if monotime > fetch_deadline
             break if body.include?("</title>")
           end
         end

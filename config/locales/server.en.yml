@@ -18,6 +18,7 @@ en:
     sitemap_autolink_excluded_terms: "Phrases that must never be auto-generated as link terms. Manual aliases override this list."
     sitemap_autolink_sync_enabled: "Run the daily sitemap-to-catalog synchronization job."
     sitemap_autolink_page_fetch_delay_ms: "Milliseconds to pause between page fetches when the sync resolves titles (new/changed URLs only). Keeps a first import of thousands of URLs from looking like a scraping burst to the target site's firewall. 0 = no delay."
+    sitemap_autolink_sync_time_budget_minutes: "Maximum minutes one synchronization run may spend before stopping cleanly (recorded in the run history); the next run resumes the remaining work. Prevents slow or tarpitting servers from pinning a sync forever."
     sitemap_autolink_auto_rebake_on_changes: "After a sync, rebake posts likely affected by added/removed phrases — one batched background job per sync, bounded by the two settings below."
     sitemap_autolink_auto_rebake_max_phrases: "If a single sync changes MORE phrases than this, skip the automatic rebake entirely (an initial catalog import would otherwise trigger a near-full-forum rebake). Affected posts still pick up links when next edited or rebaked."
     sitemap_autolink_auto_rebake_max_posts: "Most posts one sync's automatic rebake wave may rebake in total. Posts beyond the cap pick up link changes when next edited or rebaked."

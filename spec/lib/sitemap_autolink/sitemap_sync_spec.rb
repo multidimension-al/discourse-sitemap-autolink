@@ -18,12 +18,13 @@ RSpec.describe SitemapAutolink::SitemapSync do
     "<html><head><meta property=\"og:title\" content=\"#{title}\"/></head><body></body></html>"
   end
 
-  def build_sync(responses, title_suffixes: [])
+  def build_sync(responses, title_suffixes: [], **opts)
     described_class.new(
       sources: sources,
       title_suffixes: title_suffixes,
       page_fetch_delay_ms: 0,
       http_get: ->(url, _max) { responses[url] },
+      **opts,
     )
   end
 
@@ -283,5 +284,45 @@ RSpec.describe SitemapAutolink::SitemapSync do
     report = build_sync("#{base}/sitemap-products.xml" => nil).run!
     expect(report[:errors]).not_to be_empty
     expect(SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget").removed_from_source).to be(false)
+  end
+
+  it "treats a truncated sitemap as a failed fetch, not a partial URL list" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha"),
+    }
+    build_sync(responses).run!
+
+    truncated = "<?xml version=\"1.0\"?><urlset><url><loc>#{base}/shop/other</loc></url>"
+    report = build_sync("#{base}/sitemap-products.xml" => truncated).run!
+    expect(report[:errors].join).to include("incomplete")
+    expect(report[:seen]).to eq(0)
+    expect(SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget").removed_from_source).to be(false)
+  end
+
+  it "stops cleanly at the time budget and reports it" do
+    responses = {
+      "#{base}/sitemap-products.xml" =>
+        sitemap_xml([["/shop/widget-alpha", nil], ["/shop/widget-beta", nil]]),
+      "#{base}/shop/widget-alpha" => page_html("Widget Alpha Kit"),
+      "#{base}/shop/widget-beta" => page_html("Widget Beta Kit"),
+    }
+    report = build_sync(responses, time_budget_minutes: 0).run!
+
+    expect(report[:errors].join).to include("time budget")
+    expect(report[:seen]).to eq(0)
+    expect(SitemapAutolinkEntry.count).to eq(0)
+  end
+
+  it "reports live progress through on_progress" do
+    responses = {
+      "#{base}/sitemap-products.xml" =>
+        sitemap_xml([["/shop/widget-alpha", nil], ["/shop/widget-beta", nil]]),
+      "#{base}/shop/widget-alpha" => page_html("Widget Alpha Kit"),
+      "#{base}/shop/widget-beta" => page_html("Widget Beta Kit"),
+    }
+    progress = []
+    build_sync(responses, on_progress: ->(seen) { progress << seen }).run!
+    expect(progress).to eq([1, 2])
   end
 end
