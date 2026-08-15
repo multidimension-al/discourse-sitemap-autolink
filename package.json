@@ -1,5 +1,6 @@
 {
   "private": true,
+  "type": "module",
   "devDependencies": {
     "@discourse/lint-configs": "2.43.0",
     "@glint/ember-tsc": "1.1.1",
@@ -24,7 +25,8 @@
     "lint:prettier": "pnpm prettier {javascripts,desktop,mobile,common,scss}/**/*.scss {javascripts,test}/**/*.{js,gjs} --check --no-error-on-unmatched-pattern",
     "lint:prettier:fix": "pnpm prettier {javascripts,desktop,mobile,common,scss}/**/*.scss {javascripts,test}/**/*.{js,gjs} -w --no-error-on-unmatched-pattern",
     "lint:types": "ember-tsc -b",
-    "lttf:ignore": "lint-to-the-future ignore"
+    "lttf:ignore": "lint-to-the-future ignore",
+    "test:unit": "node --test \"tools/test/*.test.mjs\""
   },
   "engines": {
     "node": ">= 22",

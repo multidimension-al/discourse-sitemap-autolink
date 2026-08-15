@@ -30,7 +30,7 @@ const escapeRegExp = function (str) {
   return str.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
 };
 
-const prepareRegex = function (input) {
+const prepareRegex = function (input, wordsGlobal) {
   let leftWordBoundary = "(\\s|[:.;,!?…\\([{]|^)";
   let rightWordBoundary = "(?=[:.;,!?…\\]})]|\\s|$)";
   let wordOrRegex, modifier, regex;
@@ -45,10 +45,12 @@ const prepareRegex = function (input) {
       modifier = "g";
     }
   } else {
-    // Input is a case-insensitive WORD
-    // Autolink only first occurrence of the word in paragraph,
-    // i.e. do not use global modifier here
-    modifier = "i";
+    // Input is a case-insensitive WORD.
+    // Without per-post limits we only autolink the first occurrence in each
+    // text node, i.e. do not use the global modifier. When per-post limits
+    // are active we need every occurrence as a candidate and let the
+    // per-post counter decide how many actually become links.
+    modifier = wordsGlobal ? "ig" : "i";
     wordOrRegex = escapeRegExp(input);
   }
   try {
@@ -68,21 +70,6 @@ const prepareRegex = function (input) {
   return regex;
 };
 
-const executeRegex = function (regex, str, value, matches) {
-  if (!(regex instanceof RegExp)) {
-    return;
-  }
-  let match = regex.exec(str);
-  if (match === null) {
-    return;
-  }
-  do {
-    // This is ugly, but we need the matched word and corresponding value together
-    match.value = value;
-    matches.push(match);
-  } while (regex.global && (match = regex.exec(str)) !== null);
-};
-
 const replaceCapturedVariables = function (input, match) {
   // Did we capture user defined variables?
   // By default, we capture 2 vars: left boundary and the regex itself
@@ -98,65 +85,224 @@ const replaceCapturedVariables = function (input, match) {
   return replaced;
 };
 
-const modifyText = function (text, action) {
+// Collect every potential match of the action's inputs against a string.
+// Regex inputs are matched in their configured order first, then plain
+// words longest first, so that the returned `order` value encodes the
+// precedence of the entry that produced each candidate.
+const collectCandidates = function (str, action, wordsGlobal) {
   const words = action.inputs;
-  let inputRegexes = Object.keys(words).filter(isInputRegex);
-  // sort words longest first
-  let sortedWords = Object.keys(words)
+  const inputRegexes = Object.keys(words).filter(isInputRegex);
+  const sortedWords = Object.keys(words)
     .filter((x) => !isInputRegex(x))
     .sort((x, y) => y.length - x.length);
-  // First match regexes in the original order, then words longest first
-  let keys = inputRegexes.concat(sortedWords);
-  let matches = [];
-  for (let i = 0; i < keys.length; i++) {
-    let word = keys[i];
-    let value = words[word];
-    let regex = prepareRegex(word);
-    executeRegex(regex, text.data, value, matches);
-  }
-  // Sort matches according to index, descending order
-  // Got to work backwards not to muck up string
-  const sortedMatches = matches.sort((m, n) => n.index - m.index);
-  for (let i = 0; i < sortedMatches.length; i++) {
-    let match = sortedMatches[i];
-    let matchedLeftBoundary = match[1];
-    let matchedWord = match[2];
-    let value = replaceCapturedVariables(match.value, match);
-    // We need to protect against multiple matches of the same word or phrase
-    if (
-      match.index + matchedLeftBoundary.length + matchedWord.length >
-      text.data.length
-    ) {
+  const keys = inputRegexes.concat(sortedWords);
+  const candidates = [];
+  for (let order = 0; order < keys.length; order++) {
+    const key = keys[order];
+    const regex = prepareRegex(key, wordsGlobal);
+    if (!(regex instanceof RegExp)) {
       continue;
     }
-    text.splitText(match.index + matchedLeftBoundary.length);
-    text.nextSibling.splitText(matchedWord.length);
-    text.parentNode.replaceChild(
-      action.createNode(matchedWord, value),
-      text.nextSibling
-    );
+    let match;
+    while ((match = regex.exec(str)) !== null) {
+      const matchedWord = match[2];
+      if (matchedWord) {
+        const start = match.index + match[1].length;
+        const value = replaceCapturedVariables(words[key], match);
+        candidates.push({
+          start,
+          end: start + matchedWord.length,
+          text: matchedWord,
+          value,
+          order,
+        });
+      }
+      if (!regex.global) {
+        break;
+      }
+      // Protect against zero-length matches looping forever
+      if (match.index === regex.lastIndex) {
+        regex.lastIndex++;
+      }
+    }
   }
+  return candidates;
 };
+
+// Deterministically resolve overlapping candidates: the leftmost match
+// wins; on a tie the longer (more specific) match wins; on a further tie
+// the entry precedence (regexes in configured order, then words longest
+// first) wins. A span claimed by a winning candidate is not re-awarded to
+// shorter overlapping candidates even if the winner is later dropped by a
+// per-post limit — that keeps the outcome independent of counter state.
+const resolveOverlaps = function (candidates) {
+  const sorted = candidates.sort(
+    (a, b) =>
+      a.start - b.start ||
+      b.end - b.start - (a.end - a.start) ||
+      a.order - b.order
+  );
+  const winners = [];
+  let lastEnd = -1;
+  for (const candidate of sorted) {
+    if (candidate.start >= lastEnd) {
+      winners.push(candidate);
+      lastEnd = candidate.end;
+    }
+  }
+  return winners;
+};
+
+// Tracks how many auto-links have been created in the current post, in
+// total and per destination. maxPerTerm/maxTotal of 0 mean "no limit".
+class LinkCounter {
+  constructor({ maxPerTerm = 0, maxTotal = 0 } = {}) {
+    this.maxPerTerm = maxPerTerm;
+    this.maxTotal = maxTotal;
+    this.perTerm = new Map();
+    this.total = 0;
+  }
+
+  get unlimited() {
+    return this.maxPerTerm === 0 && this.maxTotal === 0;
+  }
+
+  allows(key) {
+    if (this.maxTotal > 0 && this.total >= this.maxTotal) {
+      return false;
+    }
+    if (
+      this.maxPerTerm > 0 &&
+      (this.perTerm.get(key) || 0) >= this.maxPerTerm
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  record(key) {
+    this.perTerm.set(key, (this.perTerm.get(key) || 0) + 1);
+    this.total++;
+  }
+
+  // Count links a previous decoration pass already created inside this
+  // element, so running again never exceeds the per-post limits.
+  seed(elem, linkClass) {
+    for (let i = 0; i < elem.childNodes.length; i++) {
+      const child = elem.childNodes[i];
+      if (child.nodeType !== 1) {
+        continue;
+      }
+      const cls = child.getAttribute("class");
+      if (
+        child.nodeName.toLowerCase() === "a" &&
+        cls &&
+        cls.split(" ").includes(linkClass)
+      ) {
+        this.record(child.getAttribute("href"));
+      } else {
+        this.seed(child, linkClass);
+      }
+    }
+  }
+}
 
 const isSkippedClass = function (classes, skipClasses) {
   // Return true if at least one of the classes should be skipped
   return classes && classes.split(" ").some((cls) => cls in skipClasses);
 };
 
-const traverseNodes = function (elem, action, skipTags, skipClasses) {
-  // work backwards so changes do not break iteration
-  for (let i = elem.childNodes.length - 1; i >= 0; i--) {
-    let child = elem.childNodes[i];
+// Collect text nodes in document order, honoring skipped tags/classes.
+// Collecting up front means later DOM mutations cannot break iteration.
+const collectTextNodes = function (elem, skipTags, skipClasses, textNodes) {
+  for (let i = 0; i < elem.childNodes.length; i++) {
+    const child = elem.childNodes[i];
     if (child.nodeType === 1) {
-      let tag = child.nodeName.toLowerCase();
-      let cls = child.getAttribute("class");
+      const tag = child.nodeName.toLowerCase();
+      const cls = child.getAttribute("class");
       if (!(tag in skipTags) && !isSkippedClass(cls, skipClasses)) {
-        traverseNodes(child, action, skipTags, skipClasses);
+        collectTextNodes(child, skipTags, skipClasses, textNodes);
       }
     } else if (child.nodeType === 3) {
-      modifyText(child, action);
+      textNodes.push(child);
     }
+  }
+  return textNodes;
+};
+
+// Wrap the accepted matches of a single text node. Matches must be
+// non-overlapping; they are applied right-to-left so earlier offsets keep
+// pointing at the right characters while the node is split up.
+const applyMatches = function (text, matches, action) {
+  const sorted = matches.sort((a, b) => b.start - a.start);
+  for (const match of sorted) {
+    if (match.end > text.data.length) {
+      continue;
+    }
+    text.splitText(match.start);
+    text.nextSibling.splitText(match.text.length);
+    text.parentNode.replaceChild(
+      action.createNode(match.text, match.value),
+      text.nextSibling
+    );
   }
 };
 
-export { readInputList, traverseNodes };
+// Process one cooked element (one post) for the given actions.
+// Every action shares one per-post counter, and the counter is seeded
+// with links from any earlier pass over the same element, so each
+// destination gets a single per-post allowance no matter how often the
+// element is decorated.
+const linkifyElement = function (
+  element,
+  actions,
+  skipTags,
+  skipClasses,
+  limits
+) {
+  const counter = new LinkCounter(limits);
+  if (!counter.unlimited) {
+    counter.seed(element, "linkify-word");
+  }
+  actions.forEach((action) => {
+    if (Object.keys(action.inputs).length === 0) {
+      return;
+    }
+    const textNodes = collectTextNodes(element, skipTags, skipClasses, []);
+    for (const text of textNodes) {
+      const candidates = collectCandidates(
+        text.data,
+        action,
+        !counter.unlimited
+      );
+      if (candidates.length === 0) {
+        continue;
+      }
+      const winners = resolveOverlaps(candidates);
+      // Winners arrive sorted by position; consume the per-post allowance
+      // in document order so the FIRST occurrence in the post is the one
+      // that gets linked.
+      const accepted = [];
+      for (const winner of winners) {
+        if (counter.allows(winner.value)) {
+          counter.record(winner.value);
+          accepted.push(winner);
+        }
+      }
+      if (accepted.length > 0) {
+        applyMatches(text, accepted, action);
+      }
+    }
+  });
+};
+
+export {
+  applyMatches,
+  collectCandidates,
+  collectTextNodes,
+  LinkCounter,
+  linkifyElement,
+  prepareRegex,
+  readInputList,
+  resolveOverlaps,
+};
