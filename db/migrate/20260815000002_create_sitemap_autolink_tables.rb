@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-class CreateGbfansAutolinkTables < ActiveRecord::Migration[8.0]
+class CreateSitemapAutolinkTables < ActiveRecord::Migration[8.0]
   def change
-    create_table :gbfans_autolink_entries do |t|
+    create_table :sitemap_autolink_entries do |t|
       t.string :url, null: false
       t.string :title, null: false
       t.string :content_type, null: false
@@ -17,11 +17,11 @@ class CreateGbfansAutolinkTables < ActiveRecord::Migration[8.0]
       t.datetime :last_seen_at
       t.timestamps
     end
-    add_index :gbfans_autolink_entries, :url, unique: true
-    add_index :gbfans_autolink_entries, :content_type
-    add_index :gbfans_autolink_entries, %i[enabled removed_from_source]
+    add_index :sitemap_autolink_entries, :url, unique: true
+    add_index :sitemap_autolink_entries, :content_type
+    add_index :sitemap_autolink_entries, %i[enabled removed_from_source]
 
-    create_table :gbfans_autolink_terms do |t|
+    create_table :sitemap_autolink_terms do |t|
       t.integer :entry_id, null: false
       t.string :phrase, null: false
       t.string :normalized_phrase, null: false
@@ -30,8 +30,8 @@ class CreateGbfansAutolinkTables < ActiveRecord::Migration[8.0]
       t.string :review_reason
       t.timestamps
     end
-    add_index :gbfans_autolink_terms, %i[entry_id normalized_phrase], unique: true
-    add_index :gbfans_autolink_terms, :normalized_phrase
-    add_index :gbfans_autolink_terms, :state
+    add_index :sitemap_autolink_terms, %i[entry_id normalized_phrase], unique: true
+    add_index :sitemap_autolink_terms, :normalized_phrase
+    add_index :sitemap_autolink_terms, :state
   end
 end

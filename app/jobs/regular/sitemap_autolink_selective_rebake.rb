@@ -2,17 +2,17 @@
 
 module Jobs
   # Rebakes posts likely affected by one changed/removed phrase, in
-  # bounded batches (modeled on Jobs::RebakeCustomEmojiPosts, plus rate
-  # limiting). raw ILIKE is only a candidate filter — the cook-time
-  # matcher decides whether a link actually appears.
-  class GbfansAutolinkSelectiveRebake < ::Jobs::Base
+  # bounded batches (modeled on core's Jobs::RebakeCustomEmojiPosts,
+  # plus rate limiting). raw ILIKE is only a candidate filter — the
+  # cook-time matcher decides whether a link actually appears.
+  class SitemapAutolinkSelectiveRebake < ::Jobs::Base
     sidekiq_options queue: "low"
 
     def execute(args)
       phrase = args[:phrase].to_s
       return if phrase.length < 3
 
-      budget = SiteSetting.gbfans_autolink_max_rebakes_per_job_run
+      budget = SiteSetting.sitemap_autolink_max_rebakes_per_job_run
       after_id = args[:after_id].to_i
 
       batch =
@@ -28,14 +28,16 @@ module Jobs
         begin
           post.rebake!(priority: :low)
         rescue => e
-          Rails.logger.warn("gbfans-autolink rebake failed for post #{post.id}: #{e.message}")
+          Rails.logger.warn(
+            "sitemap-autolink rebake failed for post #{post.id}: #{e.message}",
+          )
         end
       end
 
       if batch.size == budget
         Jobs.enqueue_in(
           1.minute,
-          :gbfans_autolink_selective_rebake,
+          :sitemap_autolink_selective_rebake,
           phrase: phrase,
           after_id: batch.last.id,
         )

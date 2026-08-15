@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
-# One canonical GBFans destination (product, shop category, wiki article,
-# …) that may be auto-linked from posts.
-class GbfansAutolinkEntry < ActiveRecord::Base
+# One canonical destination (product page, wiki article, documentation
+# page, …) that may be auto-linked from posts. URLs are stored as they
+# appear in the sitemap (absolute); manually created entries may use
+# forum-relative URLs.
+class SitemapAutolinkEntry < ActiveRecord::Base
   has_many :terms,
-           class_name: "GbfansAutolinkTerm",
+           class_name: "SitemapAutolinkTerm",
            foreign_key: :entry_id,
            dependent: :destroy
 
