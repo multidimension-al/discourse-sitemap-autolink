@@ -58,6 +58,11 @@ after_initialize do
 
   Discourse::Application.routes.append do
     namespace :admin, constraints: StaffConstraint.new do
+      # Full-page load of the custom admin page: core only routes
+      # /admin/plugins/:plugin_id and .../settings, so each custom page
+      # URL needs an explicit Rails route rendering the app shell.
+      get "plugins/discourse-sitemap-autolink/catalog" => "plugins#index"
+
       scope "/plugins/sitemap-autolink" do
         get "entries" => "sitemap_autolink_admin#entries"
         post "entries" => "sitemap_autolink_admin#create_entry"
