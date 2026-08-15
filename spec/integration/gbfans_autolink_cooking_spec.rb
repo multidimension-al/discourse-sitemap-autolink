@@ -123,6 +123,38 @@ RSpec.describe "GBFans autolink cooking pipeline" do
     end
   end
 
+  describe "category exclusions (for-sale areas)" do
+    fab!(:sale_category) { Fabricate(:category) }
+    fab!(:sale_subcategory) { Fabricate(:category, parent_category_id: sale_category.id) }
+    fab!(:normal_category) { Fabricate(:category) }
+
+    before { SiteSetting.gbfans_autolink_excluded_categories = sale_category.id.to_s }
+
+    it "never links posts in an excluded category" do
+      post = create_post(raw: "Selling my elbow pads, barely used", category: sale_category, user: user)
+      expect(autolinks(post)).to be_empty
+    end
+
+    it "excludes subcategories of an excluded category" do
+      post = create_post(raw: "Selling elbow pads cheap", category: sale_subcategory, user: user)
+      expect(autolinks(post)).to be_empty
+    end
+
+    it "still links in other categories" do
+      post = create_post(raw: "Comparing elbow pads brands", category: normal_category, user: user)
+      expect(autolinks(post).size).to eq(1)
+    end
+
+    it "links again after the exclusion is lifted and the post is rebaked" do
+      post = create_post(raw: "Selling elbow pads", category: sale_category, user: user)
+      expect(autolinks(post)).to be_empty
+
+      SiteSetting.gbfans_autolink_excluded_categories = ""
+      post.rebake!
+      expect(autolinks(post).size).to eq(1)
+    end
+  end
+
   describe "database catalog entries" do
     fab!(:entry) do
       GbfansAutolinkEntry.create!(

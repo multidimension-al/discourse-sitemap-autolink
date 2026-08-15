@@ -6,6 +6,7 @@ en:
     gbfans_autolink_max_links_per_post: "Total automatic links allowed per post across all destinations. 0 = unlimited."
     gbfans_autolink_skip_quotes: "Do not auto-link inside quoted material (aside.quote and blockquote elements)."
     gbfans_autolink_include_private_messages: "Also apply automatic linking in private messages."
+    gbfans_autolink_excluded_categories: "Never auto-link posts in these categories (subcategories are excluded too). Use for marketplace/for-sale areas where members' own listings should not gain shop links."
     gbfans_autolink_base_url: "Origin prepended to relative catalog URLs when generating links."
     gbfans_autolink_sitemap_base_url: "Base URL the catalog sync fetches sitemaps and pages from."
     gbfans_autolink_sources: "Child sitemaps to ingest, one per entry as 'path,content_type'."

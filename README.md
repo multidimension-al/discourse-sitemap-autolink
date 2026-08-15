@@ -1,65 +1,141 @@
-# GBFans Auto Linkify (fork of discourse-linkify-words)
+# discourse-sitemap-autolink
 
-A fork of the official [discourse-linkify-words](https://github.com/discourse/discourse-linkify-words)
-theme component, being extended into an automatic internal-linking system
-for [GBFans.com](https://www.gbfans.com): forum posts automatically link the
-first mention of shop products, Wiki articles, and other reference pages to
-their canonical GBFans URLs.
+Server-side automatic internal linking for GBFans.com: posts link the
+first mention of shop products, categories and wiki articles to their
+canonical GBFans URLs, during Discourse's normal cooking/rebaking —
+`Post.raw` is never modified, `Post.cooked` gets normal reversible links.
 
-## What it does today (Phase 1)
+> This repository is the plugin — install it by adding the repo's git
+> URL to your Discourse `app.yml` plugin list (see Install below). The
+> earlier client-side theme-component prototype and the offline catalog
+> tooling were removed from the tip; they remain in git history
+> (last present at commit `62854a8`). Design rationale and verified
+> extension points: `docs/PLUGIN_ASSESSMENT.md` and
+> `docs/INTERNAL_LINKING.md`.
 
-Everything the upstream component does — turn configured words, phrases, and
-regexes in posts into links — plus **per-post link frequency limits**:
+## Install
 
-- **Each destination is linked at most once per post** (default). If a post
-  mentions "elbow pads" five times, only the first mention becomes a link.
-  Every post gets its own allowance; limits are never shared across a topic.
-- Different terms are still linked independently within the same post.
-- Aliases that point at the same URL share one allowance — the limit is
-  counted **per destination URL**, not per configured entry.
-- A configurable **total cap on auto-links per post** is supported
-  (disabled by default) to keep long posts from becoming link farms.
-- Overlapping matches are resolved deterministically: **leftmost match wins,
-  then the longest (most specific) phrase**. If both `proton pack` and
-  `Hasbro proton pack` are configured, "Hasbro proton pack" in a post links
-  to the more specific entry.
+Standard Docker install — add the repo to the plugin list in
+`/var/discourse/containers/app.yml`, then rebuild:
 
-Untouched, as before: existing manual links (`<a>`), `code`/`pre` content,
-oneboxes, anything matched by `excluded_tags`/`excluded_classes`, and the
-`word,url` / `/regex/i,url` settings format including `$1…$n` captures.
+```yaml
+hooks:
+  after_code:
+    - exec:
+        cd: $home/plugins
+        cmd:
+          - git clone https://github.com/discourse/docker_manager.git
+          - git clone https://github.com/ajquick/discourse-sitemap-autolink.git
+```
+
+```sh
+cd /var/discourse && ./launcher rebuild app
+```
+
+While the repository is **private**, the container must be able to clone
+it: either make the repo public, or use a fine-grained personal access
+token (Contents: read-only, this repo only) in the clone URL —
+`https://<TOKEN>@github.com/ajquick/discourse-sitemap-autolink.git`.
+
+The plugin is **disabled after install** (`gbfans_autolink_enabled` is
+off) — it does nothing until you enable it, so installing is safe.
+
+## How it works
+
+- **Linking** happens in `on(:post_process_cooked)`: CookedPostProcessor
+  re-cooks from raw, hands the plugin a Loofah doc, the plugin inserts
+  links, and `Jobs::ProcessPost` persists the result. Create, edit,
+  `rebake!` and bulk rebakes all funnel through this hook, so disabling
+  a rule + rebaking removes its links, structurally.
+- **Matching** is one Aho–Corasick scan per post over a compiled,
+  cached ruleset (rebuilt only when the catalog version bumps). Measured
+  with a real 5,171-phrase GBFans catalog (in git history at commit
+  `62854a8`, theme-component era): automaton build ~120 ms (cached),
+  ~0.7 ms per 2 KB post, full parse+scan+rewrite ~1.9 ms —
+  `ruby script/benchmark_matcher.rb [catalog.json]` (synthetic phrases
+  when no catalog file is given).
+- **Ingestion** is a daily scheduled job (`gbfans_autolink_daily_sync`)
+  that fetches the configured child sitemaps, diffs against the stored
+  catalog (new/changed/removed/unchanged via URL + `lastmod`), fetches
+  pages for titles **only** for new/changed URLs, regenerates terms, and
+  optionally enqueues selective rebakes. Post cooking never fetches
+  anything.
+- **Safety**: generated terms pass gates (min length, generic-word list,
+  single-word wiki holdback with letter+digit exception, global excluded
+  terms). Anything questionable lands in `pending_review` instead of
+  linking. Manual terms always outrank generated ones; the global
+  excluded list does not apply to explicit manual aliases.
+- **Priorities**: alias collisions resolve deterministically by
+  `gbfans_autolink_type_priority` (manual > product > category > wiki >
+  content by default), and at match time longer phrases beat shorter
+  overlapping ones ("Hasbro Proton Pack" > "Proton Pack").
+- **Markup**: `<a class="gbfans-autolink gbfans-autolink-<type>"
+  data-gbfans-autolink="true" data-gbfans-link-type="…"
+  data-gbfans-term="…" data-gbfans-link-id="…">` — canonical URLs, no
+  tracking parameters. A tiny client initializer (optional, isolated)
+  sends `internal_auto_link_click` GA4 events via `gtag`/`dataLayer`.
+
+## Proof of concept / migration path
+
+1. Install the plugin, leave `gbfans_autolink_enabled` **off** in
+   production until tested on staging.
+2. Set `gbfans_autolink_test_mappings`, e.g.:
+   `elbow pads,/shop/grey-elbow-pads,product`
+   `Alice frame padding,/shop/alice-frame-padding,product`
+3. Enable the plugin and verify (specs cover all of these, see below):
+   raw unchanged; first occurrence linked once per post; edits keep
+   working; `post.rebake!` applies/removes/retargets links as mappings
+   change; quotes/code/manual links untouched.
+4. Remove the equivalent entries from the discourse-linkify-words theme
+   component's `linked_words` so nothing double-links.
+5. Enable `gbfans_autolink_daily_sync_enabled` to populate the catalog
+   from sitemaps; review pending terms and collisions via the admin API;
+   enable `wiki` in `gbfans_autolink_enabled_types` only after review.
+6. Retire the theme component when no manual mappings remain.
 
 ## Settings
 
-| Setting | Default | Meaning |
+All in Admin → Settings → Plugins, `gbfans autolink` filter. Highlights:
+
+| Setting | Default | Purpose |
 | --- | --- | --- |
-| `linked_words` | – | `word or phrase,URL` or `/regex/modifiers,URL` entries separated by `\|` |
-| `max_links_per_term_per_post` | `1` | How many times each destination URL may be auto-linked in a single post. `0` = no per-post limit (legacy upstream behavior: words link once per paragraph, regexes link every occurrence). |
-| `max_links_per_post` | `0` | Total auto-link budget per post across all terms. `0` = unlimited. |
-| `excluded_tags` | `code\|pre` | HTML tags never linkified (`a` and `iframe` are always skipped) |
-| `excluded_classes` | `onebox` | CSS classes never linkified (consider adding `quote` if quoted posts should not be linkified) |
+| `gbfans_autolink_enabled` | off | master switch |
+| `gbfans_autolink_test_mappings` | – | manual `phrase,url,type` rules |
+| `gbfans_autolink_max_links_per_destination_per_post` | 1 | once per destination per post |
+| `gbfans_autolink_max_links_per_post` | 0 | total cap per post (0 = unlimited) |
+| `gbfans_autolink_skip_quotes` | on | don't link inside quoted material |
+| `gbfans_autolink_excluded_categories` | – | never link in these categories + their subcategories (marketplace/for-sale areas) |
+| `gbfans_autolink_enabled_types` | manual, product, category | wiki off until vetted |
+| `gbfans_autolink_daily_sync_enabled` | off | sitemap → catalog job |
+| `gbfans_autolink_auto_rebake_on_changes` | off | selective rebakes after sync |
+| `gbfans_autolink_excluded_terms` | pack, belt, … | never auto-generate these |
+
+## Administration
+
+JSON management API (staff only) under
+`/admin/plugins/sitemap-autolink/…`: `status`, `entries` (search/filter/
+paginate), entry create/update (enable/disable, priority, URL override),
+term create/update/delete (add aliases, approve `pending_review`,
+disable), `collisions`, `pending`, `sync`, `rebuild`, `rebake`
+(per-phrase selective; full-forum deliberately stays with
+`rake posts:rebake`). See `app/controllers/gbfans_autolink_admin_controller.rb`
+for parameters. A dedicated admin UI page can be layered on top of these
+endpoints later; the API plus Data Explorer already avoids any
+hand-editing of JSON.
 
 ## Development
 
 ```sh
-pnpm install
-pnpm test:unit   # matching-logic tests (Node, no Discourse needed)
-pnpm lint
+# in a Discourse checkout with this plugin symlinked/cloned into plugins/
+LOAD_PLUGINS=1 bin/rspec plugins/discourse-sitemap-autolink/spec
+
+# dependency-free checks (no Discourse needed):
+ruby script/local_check.rb          # matcher + HTML applier behavior
+ruby script/benchmark_matcher.rb    # performance with a real catalog
 ```
 
-The matching pipeline lives in `javascripts/discourse-linkify/lib/utilities.js`:
-candidates are collected per text node in document order, overlaps are
-resolved deterministically, and a per-post `LinkCounter` enforces the
-frequency limits before any DOM is modified.
-
-## Roadmap
-
-1. ~~Per-post link frequency limits~~ (done — this component)
-2. ~~Catalog source investigation + design~~ (done — `docs/INTERNAL_LINKING.md`)
-3. ~~Generated draft catalog + collision/quality report~~ (done —
-   `tools/catalog/`)
-4. **Scope change:** catalog-scale linking moved server-side. The theme
-   component intentionally stays as-is (manual mappings + per-post
-   limits) while the `discourse-sitemap-autolink/` plugin in this repo
-   takes over automatic linking during post cooking/rebaking — see
-   `docs/PLUGIN_ASSESSMENT.md` and the plugin README, including the
-   step-by-step migration off this component.
+`spec/integration/gbfans_autolink_cooking_spec.rb` is the
+proof-of-concept contract: creation, editing, rebake-applies,
+rebake-removes, rebake-retargets, caps, quote/code/manual-link safety,
+catalog-driven linking, pending-review gating, and wiki staying dark
+until enabled.

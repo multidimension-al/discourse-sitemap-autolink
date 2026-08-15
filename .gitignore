@@ -1,4 +1,2 @@
 node_modules
 .discourse-site
-.eslintcache
-tools/catalog/.cache/
