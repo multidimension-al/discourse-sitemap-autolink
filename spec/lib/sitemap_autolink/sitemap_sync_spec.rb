@@ -421,6 +421,33 @@ RSpec.describe SitemapAutolink::SitemapSync do
     described_class.clear_cancel!
   end
 
+  it "fetches through internal host rewrites while storing public URLs" do
+    stub_request(:get, "http://internal.example:3000/sitemap-products.xml").with(
+      headers: {
+        "Host" => "example.com",
+      },
+    ).to_return(body: sitemap_xml([["/shop/widget-frame-kit", nil]]))
+    stub_request(:get, "http://internal.example:3000/shop/widget-frame-kit").with(
+      headers: {
+        "Host" => "example.com",
+      },
+    ).to_return(body: page_html("Widget Frame Kit"))
+
+    sync =
+      described_class.new(
+        sources: sources,
+        title_suffixes: [],
+        page_fetch_delay_ms: 0,
+        fetch_host_rewrites: ["example.com=http://internal.example:3000"],
+      )
+    report = sync.run!
+
+    expect(report[:errors]).to be_empty
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget-frame-kit")
+    expect(entry).to be_present
+    expect(entry.title).to eq("Widget Frame Kit")
+  end
+
   it "reports live progress through on_progress" do
     responses = {
       "#{base}/sitemap-products.xml" =>

@@ -57,6 +57,10 @@ plugins:
     default: 500
     min: 0
     max: 30000
+  sitemap_autolink_fetch_host_rewrites:
+    default: ""
+    type: list
+    list_type: compact
   sitemap_autolink_sync_time_budget_minutes:
     default: 30
     min: 5
