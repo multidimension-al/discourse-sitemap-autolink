@@ -113,6 +113,7 @@ module SitemapAutolink
         pages_fetched: 0,
         fetch_seconds: 0.0,
         slowest_fetches: [],
+        deferred_retries: 0,
         sources: @sources.map { |s| "#{s[:url]} (#{s[:type]})" },
       }
     end
@@ -184,6 +185,10 @@ module SitemapAutolink
           @report[:slowest_fetches].map { |(u, s)| "#{u} (#{s}s)" }.join(", ")
         @report[:notes] << "fetched #{@report[:pages_fetched]} pages in " \
           "#{@report[:fetch_seconds].round}s (avg #{avg.round(2)}s); slowest: #{slowest}"
+      end
+      if @report[:deferred_retries] > 0
+        @report[:notes] << "#{@report[:deferred_retries]} slow/unreachable pages are in " \
+          "title-retry backoff and were skipped this run"
       end
 
       Catalog.bump_version!
@@ -273,6 +278,11 @@ module SitemapAutolink
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
+    # 1 failure → retry tomorrow; then 2 days, 4 days, capped at weekly.
+    def title_retry_backoff(failures)
+      [2**[failures - 1, 0].max, 7].min.days
+    end
+
     def sync_entry(url, lastmod, content_type, now)
       entry = SitemapAutolinkEntry.find_by(url: url)
 
@@ -289,6 +299,8 @@ module SitemapAutolink
             auto_discovered: true,
             first_seen_at: now,
             last_seen_at: now,
+            title_fetch_failures: title_source == "slug" ? 1 : 0,
+            next_title_fetch_at: title_source == "slug" ? now + title_retry_backoff(1) : nil,
           )
         regenerate_terms(entry)
         @report[:added] << url
@@ -309,7 +321,19 @@ module SitemapAutolink
       end
 
       changed = lastmod.present? && lastmod != entry.lastmod
+      # Slug-titled entries retry their title fetch — but on a BACKOFF
+      # schedule after failures. A page slower than the fetch cap can
+      # never deliver a title, and without backoff such pages tax every
+      # run ~cap seconds each, forever (a lastmod change still forces a
+      # fresh attempt).
+      retry_due =
+        entry.next_title_fetch_at.nil? || entry.next_title_fetch_at <= now
       slug_title = entry.title_source == "slug"
+      if slug_title && !retry_due && !changed
+        @report[:deferred_retries] += 1
+        entry.update_columns(last_seen_at: now)
+        return
+      end
       if changed || slug_title
         title, title_source = throttled_resolve_title(url)
         if title_source == "page"
@@ -319,6 +343,8 @@ module SitemapAutolink
               title_source: title_source,
               lastmod: lastmod,
               last_seen_at: now,
+              title_fetch_failures: 0,
+              next_title_fetch_at: nil,
             )
             regenerate_terms(entry)
             @report[:title_changed] << url
@@ -327,11 +353,23 @@ module SitemapAutolink
             # (wiki pages named exactly like their slug, e.g. a person's
             # name). The heal must still flip title_source to "page", or
             # the entry re-downloads its page on every sync forever.
-            entry.update!(title_source: "page", lastmod: lastmod, last_seen_at: now)
+            entry.update!(
+              title_source: "page",
+              lastmod: lastmod,
+              last_seen_at: now,
+              title_fetch_failures: 0,
+              next_title_fetch_at: nil,
+            )
           end
           return
         end
-        entry.update!(lastmod: lastmod, last_seen_at: now)
+        failures = entry.title_fetch_failures + 1
+        entry.update!(
+          lastmod: lastmod,
+          last_seen_at: now,
+          title_fetch_failures: failures,
+          next_title_fetch_at: now + title_retry_backoff(failures),
+        )
         return
       end
 

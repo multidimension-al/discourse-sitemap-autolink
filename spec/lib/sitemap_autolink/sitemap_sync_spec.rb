@@ -169,10 +169,45 @@ RSpec.describe SitemapAutolink::SitemapSync do
     expect(entry.title_source).to eq("slug")
     expect(entry.title).to eq("Foremans Field Guide")
 
+    entry.update_columns(next_title_fetch_at: 1.minute.ago)
     responses["#{base}/shop/foremans-field-guide"] = page_html("Foreman's Field Guide")
     build_sync(responses).run!
     expect(entry.reload.title).to eq("Foreman's Field Guide")
     expect(entry.title_source).to eq("page")
+  end
+
+  it "backs off title retries for pages that keep failing instead of taxing every run" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/wiki/slow-page", nil]]),
+      "#{base}/wiki/slow-page" => nil,
+    }
+    build_sync(responses).run!
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/wiki/slow-page")
+    expect(entry.title_source).to eq("slug")
+    expect(entry.title_fetch_failures).to eq(1)
+    expect(entry.next_title_fetch_at).to be_present
+
+    fetches = []
+    report =
+      described_class.new(
+        sources: sources,
+        title_suffixes: [],
+        page_fetch_delay_ms: 0,
+        http_get: ->(url, _max) do
+          fetches << url
+          responses[url]
+        end,
+      ).run!
+    expect(fetches).to eq(["#{base}/sitemap-products.xml"])
+    expect(report[:notes].join).to include("backoff")
+
+    entry.update_columns(next_title_fetch_at: 1.minute.ago)
+    responses["#{base}/wiki/slow-page"] = page_html("Slow Page")
+    build_sync(responses).run!
+    entry.reload
+    expect(entry.title_source).to eq("page")
+    expect(entry.title_fetch_failures).to eq(0)
+    expect(entry.next_title_fetch_at).to be_nil
   end
 
   it "persists the heal even when the page title equals the slug title" do
@@ -185,6 +220,7 @@ RSpec.describe SitemapAutolink::SitemapSync do
     expect(entry.title_source).to eq("slug")
     expect(entry.title).to eq("Martin Jarvis")
 
+    entry.update_columns(next_title_fetch_at: 1.minute.ago)
     responses["#{base}/wiki/martin-jarvis"] = page_html("Martin Jarvis")
     build_sync(responses).run!
     expect(entry.reload.title_source).to eq("page")
