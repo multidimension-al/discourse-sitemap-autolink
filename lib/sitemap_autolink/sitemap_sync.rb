@@ -12,7 +12,7 @@ module SitemapAutolink
   # HERE, never during post cooking), regenerate terms, and report what
   # changed so selective rebakes can be enqueued.
   class SitemapSync
-    USER_AGENT = "discourse-sitemap-autolink (+https://github.com/ajquick/discourse-sitemap-autolink)"
+    USER_AGENT = "discourse-sitemap-autolink (+https://github.com/multidimension-al/discourse-sitemap-autolink)"
     MAX_TITLE_BYTES = 524_288
     MAX_INDEX_CHILDREN = 100
     # Hard wall-clock cap for ONE HTTP fetch. Net::HTTP's read_timeout
