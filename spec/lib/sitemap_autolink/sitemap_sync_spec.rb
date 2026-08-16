@@ -41,6 +41,8 @@ RSpec.describe SitemapAutolink::SitemapSync do
     expect(entry.title_source).to eq("page")
     expect(entry.terms.linkable.pluck(:normalized_phrase)).to include("widget frame kit")
     expect(report[:phrases_added]).to include("widget frame kit")
+    expect(report[:pages_fetched]).to eq(1)
+    expect(report[:notes].join).to include("fetched 1 pages")
   end
 
   it "expands sitemap indexes into their child sitemaps" do

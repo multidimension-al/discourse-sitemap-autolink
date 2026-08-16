@@ -90,6 +90,9 @@ module SitemapAutolink
         errors: [],
         notes: [],
         partial: false,
+        pages_fetched: 0,
+        fetch_seconds: 0.0,
+        slowest_fetches: [],
         sources: @sources.map { |s| "#{s[:url]} (#{s[:type]})" },
       }
     end
@@ -145,6 +148,17 @@ module SitemapAutolink
       rescue => e
         @report[:errors] << "mark_removed: #{e.class} #{e.message}"
       end
+      # Fetch telemetry in the run details: an average that climbs run
+      # over run (or a slowest-list full of one host) is the in-product
+      # evidence of server-side throttling of the sync's requests.
+      if @report[:pages_fetched] > 0
+        avg = @report[:fetch_seconds] / @report[:pages_fetched]
+        slowest =
+          @report[:slowest_fetches].map { |(u, s)| "#{u} (#{s}s)" }.join(", ")
+        @report[:notes] << "fetched #{@report[:pages_fetched]} pages in " \
+          "#{@report[:fetch_seconds].round}s (avg #{avg.round(2)}s); slowest: #{slowest}"
+      end
+
       Catalog.bump_version!
       if defined?(Rails)
         @report[:errors].each { |e| Rails.logger.warn("sitemap-autolink sync: #{e}") }
@@ -355,10 +369,21 @@ module SitemapAutolink
     end
 
     def resolve_title(url)
+      started = monotime
       body = to_utf8(@http_get.call(url, MAX_TITLE_BYTES))
+      record_fetch_time(url, monotime - started)
       title = body && title_from_html(body)
       return [title, "page"] if title.present?
       [title_from_slug(url), "slug"]
+    end
+
+    def record_fetch_time(url, elapsed)
+      @report[:pages_fetched] += 1
+      @report[:fetch_seconds] += elapsed
+      slowest = @report[:slowest_fetches]
+      slowest << [url, elapsed.round(1)]
+      slowest.sort_by! { |(_u, s)| -s }
+      slowest.pop while slowest.size > 5
     end
 
     def title_from_html(html)
