@@ -182,7 +182,9 @@ module SitemapAutolink
       if @report[:pages_fetched] > 0
         avg = @report[:fetch_seconds] / @report[:pages_fetched]
         slowest =
-          @report[:slowest_fetches].map { |(u, s)| "#{u} (#{s}s)" }.join(", ")
+          @report[:slowest_fetches]
+            .map { |(u, s, trace)| trace ? "#{u} (#{s}s — #{trace})" : "#{u} (#{s}s)" }
+            .join(", ")
         @report[:notes] << "fetched #{@report[:pages_fetched]} pages in " \
           "#{@report[:fetch_seconds].round}s (avg #{avg.round(2)}s); slowest: #{slowest}"
       end
@@ -458,9 +460,24 @@ module SitemapAutolink
       @report[:pages_fetched] += 1
       @report[:fetch_seconds] += elapsed
       slowest = @report[:slowest_fetches]
-      slowest << [url, elapsed.round(1)]
-      slowest.sort_by! { |(_u, s)| -s }
+      slowest << [url, elapsed.round(1), fetch_trace_summary]
+      slowest.sort_by! { |(_u, s, _t)| -s }
       slowest.pop while slowest.size > 5
+    end
+
+    # Compact phase breakdown of the last default_http_get call, so a
+    # slow fetch in the telemetry says WHERE the time went (connect,
+    # waiting for the first byte, hop count, exception class) instead
+    # of leaving it to guesswork.
+    def fetch_trace_summary
+      t = @fetch_trace
+      return nil if t.nil?
+      parts = []
+      parts << "#{t[:hops]} hops" if t[:hops].to_i > 1
+      parts << "connect #{t[:connect_s]}s" if t[:connect_s]
+      parts << "first byte #{t[:first_byte_s]}s" if t[:first_byte_s]
+      parts << t[:error] if t[:error]
+      parts.empty? ? nil : parts.join(", ")
     end
 
     def title_from_html(html)
@@ -543,10 +560,15 @@ module SitemapAutolink
     # server that stalls before its first body byte) stack timeouts
     # well past the intended cap.
     def default_http_get(url, max_bytes, redirects_left = 3, deadline = nil)
-      deadline ||= monotime + MAX_FETCH_SECONDS
+      if deadline.nil?
+        deadline = monotime + MAX_FETCH_SECONDS
+        @fetch_trace = { hops: 0 }
+      end
       return nil if monotime > deadline
+      @fetch_trace[:hops] += 1
       uri = URI.parse(url)
       body = +"".b
+      started = monotime
       Net::HTTP.start(
         uri.host,
         uri.port,
@@ -554,8 +576,16 @@ module SitemapAutolink
         open_timeout: 10,
         read_timeout: 15,
       ) do |http|
+        # Net::HTTP silently RETRIES an idempotent request once when the
+        # server kills the connection — stacking two full timeout waits
+        # onto one "fetch". Our retry policy lives in the backoff
+        # schedule, not hidden inside the HTTP client.
+        http.max_retries = 0
+        @fetch_trace[:connect_s] = (monotime - started).round(1)
+        requested = monotime
         request = Net::HTTP::Get.new(uri, "User-Agent" => @user_agent, "Accept" => "text/html,application/xml")
         http.request(request) do |response|
+          @fetch_trace[:first_byte_s] = (monotime - requested).round(1)
           if response.is_a?(Net::HTTPRedirection) && redirects_left.positive?
             location = response["location"]
             return nil if location.blank?
@@ -571,7 +601,8 @@ module SitemapAutolink
         end
       end
       body
-    rescue StandardError
+    rescue StandardError => e
+      @fetch_trace[:error] = e.class.name if @fetch_trace
       nil
     end
   end
