@@ -6,6 +6,13 @@
 class SitemapAutolinkSyncRun < ActiveRecord::Base
   scope :recent, -> { order(started_at: :desc) }
 
+  # An open run older than the time budget (plus slack) cannot still be
+  # alive — the budget would have stopped it — so it was killed mid-run.
+  # UI and sweeper both use this to call a corpse a corpse quickly.
+  def self.stale_after
+    (SiteSetting.sitemap_autolink_sync_time_budget_minutes + 15).minutes
+  end
+
   # Yields the freshly created run row so the caller can stream live
   # progress into it while the sync works (the admin UI polls it).
   def self.record(triggered_by:)

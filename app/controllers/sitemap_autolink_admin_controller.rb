@@ -200,6 +200,17 @@ class SitemapAutolinkAdminController < Admin::AdminController
   end
 
   def sync
+    if Discourse.redis.get(SitemapAutolink::SitemapSync::RUNNING_LOCK_KEY).present?
+      return(
+        render json:
+                 failed_json.merge(
+                   error: "A synchronization is already running — cancel it or wait for it to finish.",
+                 ),
+               status: 409
+      )
+    end
+    # A deliberate Sync now lifts any lingering admin cancel.
+    SitemapAutolink::SitemapSync.clear_cancel!
     Jobs.enqueue(:sitemap_autolink_sync, triggered_by: "manual")
     render json: success_json
   end
@@ -236,17 +247,20 @@ class SitemapAutolinkAdminController < Admin::AdminController
 
   # A run's counts and success flag are written only when it completes,
   # so an open row is NOT a failure: it is either running right now or
-  # was killed mid-run by a restart. Say which, instead of rendering
-  # "FAILED 0 0 0 0" for a sync that is happily working. A completed
-  # run that stopped at its time budget is "partial", not "failed" —
-  # FAILED stays reserved for actual errors.
+  # was killed mid-run by a restart. A completed run that stopped at its
+  # time budget is "partial", not "failed" — FAILED stays reserved for
+  # actual errors. Liveness is decided by the 10-second progress
+  # heartbeat, NOT by age: a run whose heartbeat went quiet is a corpse
+  # and says so within ~90 seconds (the grace covers the initial
+  # sitemap downloads and worst-case 30s page fetches).
   def run_result(run)
     if run.finished_at.present?
       return "failed" if !run.success
       return "partial" if run.partial
       return "ok"
     end
-    run.started_at && run.started_at > 2.hours.ago ? "running" : "interrupted"
+    heartbeat = [run.updated_at, run.started_at].compact.max
+    heartbeat && heartbeat > 90.seconds.ago ? "running" : "interrupted"
   end
 
   def serialize_run(run)

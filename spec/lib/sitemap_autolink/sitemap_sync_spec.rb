@@ -381,6 +381,8 @@ RSpec.describe SitemapAutolink::SitemapSync do
     expect(report[:seen]).to eq(1)
     expect(SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget-alpha")).to be_present
     expect(SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget-beta")).to be_nil
+  ensure
+    described_class.clear_cancel!
   end
 
   it "reports live progress through on_progress" do

@@ -61,6 +61,27 @@ RSpec.describe Jobs::SitemapAutolinkSync do
     expect(run.error_details).to include("failed to fetch")
   end
 
+  it "skips while an admin cancel is in effect or another sync holds the lock" do
+    SitemapAutolink::SitemapSync.request_cancel!
+    expect { described_class.new.execute(triggered_by: "manual") }.not_to change {
+      SitemapAutolinkSyncRun.count
+    }
+    SitemapAutolink::SitemapSync.clear_cancel!
+
+    Discourse.redis.set(SitemapAutolink::SitemapSync::RUNNING_LOCK_KEY, "1")
+    expect { described_class.new.execute(triggered_by: "manual") }.not_to change {
+      SitemapAutolinkSyncRun.count
+    }
+  ensure
+    SitemapAutolink::SitemapSync.clear_cancel!
+    Discourse.redis.del(SitemapAutolink::SitemapSync::RUNNING_LOCK_KEY)
+  end
+
+  it "releases the running lock when the sync finishes" do
+    described_class.new.execute(triggered_by: "manual")
+    expect(Discourse.redis.get(SitemapAutolink::SitemapSync::RUNNING_LOCK_KEY)).to be_nil
+  end
+
   it "does not run on schedule when sync is disabled, but manual trigger works" do
     SiteSetting.sitemap_autolink_sync_enabled = false
     expect { described_class.new.execute({}) }.not_to change { SitemapAutolinkSyncRun.count }
