@@ -281,15 +281,23 @@ module SitemapAutolink
       slug_title = entry.title_source == "slug"
       if changed || slug_title
         title, title_source = throttled_resolve_title(url)
-        if title_source == "page" && title != entry.title
-          entry.update!(
-            title: title,
-            title_source: title_source,
-            lastmod: lastmod,
-            last_seen_at: now,
-          )
-          regenerate_terms(entry)
-          @report[:title_changed] << url
+        if title_source == "page"
+          if title != entry.title
+            entry.update!(
+              title: title,
+              title_source: title_source,
+              lastmod: lastmod,
+              last_seen_at: now,
+            )
+            regenerate_terms(entry)
+            @report[:title_changed] << url
+          else
+            # The fetched title can be IDENTICAL to the stored slug title
+            # (wiki pages named exactly like their slug, e.g. a person's
+            # name). The heal must still flip title_source to "page", or
+            # the entry re-downloads its page on every sync forever.
+            entry.update!(title_source: "page", lastmod: lastmod, last_seen_at: now)
+          end
           return
         end
         entry.update!(lastmod: lastmod, last_seen_at: now)

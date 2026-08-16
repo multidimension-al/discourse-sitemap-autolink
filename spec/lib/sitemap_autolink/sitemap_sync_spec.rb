@@ -175,6 +175,33 @@ RSpec.describe SitemapAutolink::SitemapSync do
     expect(entry.title_source).to eq("page")
   end
 
+  it "persists the heal even when the page title equals the slug title" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/wiki/martin-jarvis", nil]]),
+      "#{base}/wiki/martin-jarvis" => nil,
+    }
+    build_sync(responses).run!
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/wiki/martin-jarvis")
+    expect(entry.title_source).to eq("slug")
+    expect(entry.title).to eq("Martin Jarvis")
+
+    responses["#{base}/wiki/martin-jarvis"] = page_html("Martin Jarvis")
+    build_sync(responses).run!
+    expect(entry.reload.title_source).to eq("page")
+
+    fetches = []
+    described_class.new(
+      sources: sources,
+      title_suffixes: [],
+      page_fetch_delay_ms: 0,
+      http_get: ->(url, _max) do
+        fetches << url
+        responses[url]
+      end,
+    ).run!
+    expect(fetches).to eq(["#{base}/sitemap-products.xml"])
+  end
+
   it "skips URLs matching excluded patterns and counts them" do
     responses = {
       "#{base}/sitemap-products.xml" =>
