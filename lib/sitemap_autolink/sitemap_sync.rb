@@ -49,6 +49,10 @@ module SitemapAutolink
     # excluded_url_patterns: see UrlFilter (substring or * wildcard).
     # user_agent: override the identifying UA if a site's WAF needs it.
     # page_fetch_delay_ms: politeness pause between page (title) fetches.
+    # fetch_host_rewrites: "public_host=target" pairs — connections for
+    #   public_host URLs are made to target (host, host:port, or
+    #   scheme://host:port) with a Host: public_host header, bypassing
+    #   the public edge/throttling; all stored URLs stay public.
     # time_budget_minutes: overall cap for one run; the next run resumes.
     # on_progress: ->(seen_count) called after each processed URL, so the
     #   caller can surface live progress (the job mirrors it into the
@@ -60,6 +64,7 @@ module SitemapAutolink
       excluded_url_patterns: nil,
       user_agent: nil,
       page_fetch_delay_ms: nil,
+      fetch_host_rewrites: nil,
       time_budget_minutes: nil,
       on_progress: nil,
       http_get: nil
@@ -86,6 +91,11 @@ module SitemapAutolink
             ),
         )
       @user_agent = user_agent || USER_AGENT
+      @fetch_rewrites =
+        parse_rewrites(
+          fetch_host_rewrites ||
+            (defined?(SiteSetting) ? SiteSetting.sitemap_autolink_fetch_host_rewrites : ""),
+        )
       @page_fetch_delay =
         (
           page_fetch_delay_ms ||
@@ -283,6 +293,28 @@ module SitemapAutolink
     # 1 failure → retry tomorrow; then 2 days, 4 days, capped at weekly.
     def title_retry_backoff(failures)
       [2**[failures - 1, 0].max, 7].min.days
+    end
+
+    # "public_host=target" rows; target may be host, host:port, or
+    # scheme://host:port. Bad rows are skipped.
+    def parse_rewrites(setting)
+      rows = setting.is_a?(String) ? setting.split("|") : Array(setting)
+      rows.each_with_object({}) do |row, map|
+        public_host, target = row.to_s.split("=", 2)&.map(&:strip)
+        next if public_host.nil? || public_host.empty? || target.nil? || target.empty?
+        begin
+          if target.include?("://")
+            t = URI.parse(target)
+            next if t.host.nil?
+            map[public_host.downcase] = { scheme: t.scheme, host: t.host, port: t.port }
+          else
+            host, port = target.split(":")
+            map[public_host.downcase] = { scheme: nil, host: host, port: port&.to_i }
+          end
+        rescue URI::InvalidURIError
+          next
+        end
+      end
     end
 
     def sync_entry(url, lastmod, content_type, now)
@@ -567,12 +599,16 @@ module SitemapAutolink
       return nil if monotime > deadline
       @fetch_trace[:hops] += 1
       uri = URI.parse(url)
+      target = @fetch_rewrites[uri.host.to_s.downcase]
+      scheme = target&.[](:scheme) || uri.scheme
+      connect_host = target ? target[:host] : uri.host
+      connect_port = target ? (target[:port] || (scheme == "https" ? 443 : 80)) : uri.port
       body = +"".b
       started = monotime
       Net::HTTP.start(
-        uri.host,
-        uri.port,
-        use_ssl: uri.scheme == "https",
+        connect_host,
+        connect_port,
+        use_ssl: scheme == "https",
         open_timeout: 10,
         read_timeout: 15,
       ) do |http|
@@ -583,7 +619,11 @@ module SitemapAutolink
         http.max_retries = 0
         @fetch_trace[:connect_s] = (monotime - started).round(1)
         requested = monotime
-        request = Net::HTTP::Get.new(uri, "User-Agent" => @user_agent, "Accept" => "text/html,application/xml")
+        headers = { "User-Agent" => @user_agent, "Accept" => "text/html,application/xml" }
+        # When connecting to an internal target, the app still needs to
+        # see the PUBLIC host to route and render the right site.
+        headers["Host"] = uri.host if target
+        request = Net::HTTP::Get.new(uri, headers)
         http.request(request) do |response|
           @fetch_trace[:first_byte_s] = (monotime - requested).round(1)
           if response.is_a?(Net::HTTPRedirection) && redirects_left.positive?
