@@ -500,7 +500,13 @@ module SitemapAutolink
     # Accumulates in binary (chunks arrive as ASCII-8BIT; mixing them
     # into a UTF-8 string raises Encoding::CompatibilityError on pages
     # with typographic characters); callers convert via to_utf8.
-    def default_http_get(url, max_bytes, redirects_left = 3)
+    # The deadline is set ONCE per top-level fetch and shared across
+    # redirect hops — per-hop clocks let a slow redirect chain (or a
+    # server that stalls before its first body byte) stack timeouts
+    # well past the intended cap.
+    def default_http_get(url, max_bytes, redirects_left = 3, deadline = nil)
+      deadline ||= monotime + MAX_FETCH_SECONDS
+      return nil if monotime > deadline
       uri = URI.parse(url)
       body = +"".b
       Net::HTTP.start(
@@ -508,21 +514,20 @@ module SitemapAutolink
         uri.port,
         use_ssl: uri.scheme == "https",
         open_timeout: 10,
-        read_timeout: 20,
+        read_timeout: 15,
       ) do |http|
         request = Net::HTTP::Get.new(uri, "User-Agent" => @user_agent, "Accept" => "text/html,application/xml")
         http.request(request) do |response|
           if response.is_a?(Net::HTTPRedirection) && redirects_left.positive?
             location = response["location"]
             return nil if location.blank?
-            return default_http_get(URI.join(url, location).to_s, max_bytes, redirects_left - 1)
+            return default_http_get(URI.join(url, location).to_s, max_bytes, redirects_left - 1, deadline)
           end
           return nil unless response.is_a?(Net::HTTPSuccess)
-          fetch_deadline = monotime + MAX_FETCH_SECONDS
           response.read_body do |chunk|
             body << chunk
             break if body.bytesize >= max_bytes
-            break if monotime > fetch_deadline
+            break if monotime > deadline
             break if body.include?("</title>")
           end
         end
