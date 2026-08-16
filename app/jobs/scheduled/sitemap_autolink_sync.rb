@@ -58,7 +58,9 @@ module Jobs
               mono = Process.clock_gettime(Process::CLOCK_MONOTONIC)
               if mono - last_update >= 10
                 last_update = mono
-                run.update_columns(urls_seen: seen)
+                # updated_at doubles as the liveness heartbeat: a row
+                # without a fresh one is a killed run, not a running one.
+                run.update_columns(urls_seen: seen, updated_at: Time.zone.now)
               end
             end
             SitemapAutolink::SitemapSync.new(on_progress: on_progress).run!
