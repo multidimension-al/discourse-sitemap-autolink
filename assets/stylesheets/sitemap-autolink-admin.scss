@@ -1,0 +1,17 @@
+// Admin catalog page. Error details are long single-line strings
+// (URL + exception message); a default <pre> refuses to wrap them and
+// stretches the runs table — and the whole page — horizontally.
+.sitemap-autolink-admin {
+  &__errors {
+    margin: 0.5em 0 0;
+    max-width: 100%;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  // Long URLs and titles in the entries/runs tables get a break point
+  // instead of forcing the layout wide.
+  table td {
+    overflow-wrap: anywhere;
+  }
+}

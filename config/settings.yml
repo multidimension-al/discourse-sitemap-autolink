@@ -1,0 +1,84 @@
+plugins:
+  sitemap_autolink_enabled:
+    default: false
+  sitemap_autolink_sources:
+    default: ""
+    type: list
+  sitemap_autolink_manual_mappings:
+    default: ""
+    type: list
+    list_type: compact
+  sitemap_autolink_max_links_per_destination_per_post:
+    default: 1
+    min: 0
+    max: 100
+  sitemap_autolink_max_links_per_post:
+    default: 0
+    min: 0
+    max: 1000
+  sitemap_autolink_skip_quotes:
+    default: true
+  sitemap_autolink_include_private_messages:
+    default: false
+  sitemap_autolink_excluded_categories:
+    default: ""
+    type: category_list
+  sitemap_autolink_enabled_types:
+    default: ""
+    type: list
+    list_type: compact
+  sitemap_autolink_type_priority:
+    default: "manual"
+    type: list
+    list_type: compact
+  sitemap_autolink_min_phrase_length:
+    default: 5
+    min: 1
+    max: 100
+  sitemap_autolink_min_phrase_words:
+    default: 2
+    min: 1
+    max: 10
+  sitemap_autolink_generate_plurals:
+    default: true
+  sitemap_autolink_title_suffixes:
+    default: ""
+    type: list
+  sitemap_autolink_excluded_url_patterns:
+    default: ""
+    type: list
+  sitemap_autolink_excluded_terms:
+    default: ""
+    type: list
+    list_type: compact
+  sitemap_autolink_sync_enabled:
+    default: false
+  sitemap_autolink_page_fetch_delay_ms:
+    default: 500
+    min: 0
+    max: 30000
+  sitemap_autolink_fetch_host_rewrites:
+    default: ""
+    type: list
+    list_type: compact
+  sitemap_autolink_sync_time_budget_minutes:
+    default: 30
+    min: 5
+    max: 480
+  sitemap_autolink_auto_rebake_on_changes:
+    default: false
+  sitemap_autolink_auto_rebake_max_phrases:
+    default: 50
+    min: 1
+    max: 10000
+  sitemap_autolink_auto_rebake_max_posts:
+    default: 500
+    min: 1
+    max: 100000
+  sitemap_autolink_max_rebakes_per_job_run:
+    default: 200
+    min: 10
+    max: 5000
+  sitemap_autolink_analytics_enabled:
+    default: true
+    client: true
