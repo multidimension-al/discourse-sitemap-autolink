@@ -65,14 +65,14 @@ RSpec.describe SitemapAutolink::SitemapSync do
 
   it "composes suffix fragments split by the | list separator" do
     responses = {
-      "#{base}/sitemap-products.xml" => sitemap_xml([["/wiki/martin", nil]]),
-      "#{base}/wiki/martin" => page_html("Martin Jarvis - Example Wiki | Example.com"),
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/wiki/widget-history", nil]]),
+      "#{base}/wiki/widget-history" => page_html("Widget History - Example Wiki | Example.com"),
     }
     # "- Example Wiki | Example.com" cannot be one list entry, so admins
     # enter the fragments; dangling-connector trimming composes them.
     build_sync(responses, title_suffixes: [" - Example Wiki", "Example.com"]).run!
-    entry = SitemapAutolinkEntry.find_by(url: "#{base}/wiki/martin")
-    expect(entry.title).to eq("Martin Jarvis")
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/wiki/widget-history")
+    expect(entry.title).to eq("Widget History")
   end
 
   it "strips configured title suffixes" do
@@ -160,15 +160,15 @@ RSpec.describe SitemapAutolink::SitemapSync do
   it "handles binary-encoded bodies with typographic characters" do
     responses = {
       "#{base}/sitemap-products.xml" =>
-        sitemap_xml([["/shop/spenglers-neutrona-wand", nil]]).b,
-      "#{base}/shop/spenglers-neutrona-wand" =>
-        page_html("Spengler’s Neutrona Wand").b,
+        sitemap_xml([["/shop/craftsmans-widget-kit", nil]]).b,
+      "#{base}/shop/craftsmans-widget-kit" =>
+        page_html("Craftsman’s Widget Kit").b,
     }
     report = build_sync(responses).run!
     expect(report[:errors]).to be_empty
-    entry = SitemapAutolinkEntry.find_by(url: "#{base}/shop/spenglers-neutrona-wand")
-    expect(entry.title).to eq("Spengler’s Neutrona Wand")
-    expect(entry.terms.linkable.pluck(:normalized_phrase)).to include("spengler's neutrona wand")
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/shop/craftsmans-widget-kit")
+    expect(entry.title).to eq("Craftsman’s Widget Kit")
+    expect(entry.terms.linkable.pluck(:normalized_phrase)).to include("craftsman's widget kit")
   end
 
   it "falls back to slug titles when the page fetch fails, then heals" do
@@ -224,16 +224,16 @@ RSpec.describe SitemapAutolink::SitemapSync do
 
   it "persists the heal even when the page title equals the slug title" do
     responses = {
-      "#{base}/sitemap-products.xml" => sitemap_xml([["/wiki/martin-jarvis", nil]]),
-      "#{base}/wiki/martin-jarvis" => nil,
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/wiki/acme-widget", nil]]),
+      "#{base}/wiki/acme-widget" => nil,
     }
     build_sync(responses).run!
-    entry = SitemapAutolinkEntry.find_by(url: "#{base}/wiki/martin-jarvis")
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/wiki/acme-widget")
     expect(entry.title_source).to eq("slug")
-    expect(entry.title).to eq("Martin Jarvis")
+    expect(entry.title).to eq("Acme Widget")
 
     entry.update_columns(next_title_fetch_at: 1.minute.ago)
-    responses["#{base}/wiki/martin-jarvis"] = page_html("Martin Jarvis")
+    responses["#{base}/wiki/acme-widget"] = page_html("Acme Widget")
     build_sync(responses).run!
     expect(entry.reload.title_source).to eq("page")
 

@@ -2,7 +2,7 @@
 
 RSpec.describe Jobs::SitemapAutolinkRebakePosts do
   fab!(:matching) { Fabricate(:post, raw: "I finished my Widget Frame Kit yesterday") }
-  fab!(:matching_twice) { Fabricate(:post, raw: "elbow pads AND a widget frame kit together") }
+  fab!(:matching_twice) { Fabricate(:post, raw: "carry case AND a widget frame kit together") }
   fab!(:unrelated) { Fabricate(:post, raw: "nothing relevant in this one") }
 
   def rebaked_ids(&blk)
@@ -15,7 +15,7 @@ RSpec.describe Jobs::SitemapAutolinkRebakePosts do
   it "rebakes each candidate post exactly once, even when several phrases match it" do
     ids =
       rebaked_ids do
-        described_class.new.execute(phrases: ["widget frame kit", "elbow pads"])
+        described_class.new.execute(phrases: ["widget frame kit", "carry case"])
       end
     expect(ids).to contain_exactly(matching.id, matching_twice.id)
   end

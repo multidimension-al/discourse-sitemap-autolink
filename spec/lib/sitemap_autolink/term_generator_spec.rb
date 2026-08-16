@@ -37,8 +37,8 @@ RSpec.describe SitemapAutolink::TermGenerator do
   end
 
   it "does not invent semantic aliases" do
-    result = described_class.generate("Grey Elbow Pads", "product", settings)
-    expect(phrases(result)).not_to include("elbow pads")
+    result = described_class.generate("Grey Carry Case", "product", settings)
+    expect(phrases(result)).not_to include("carry case")
   end
 
   it "sends short phrases to review instead of activating them" do
@@ -75,7 +75,7 @@ RSpec.describe SitemapAutolink::TermGenerator do
   end
 
   it "handles & and 'and' variants" do
-    result = described_class.generate("Bumper & Siren Kit", "product", settings)
-    expect(phrases(result)).to include("bumper and siren kit")
+    result = described_class.generate("Widget & Sprocket Kit", "product", settings)
+    expect(phrases(result)).to include("widget and sprocket kit")
   end
 end

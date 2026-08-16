@@ -3,7 +3,7 @@
 module SitemapAutolink
   # Generates candidate matching phrases from a canonical title, with
   # conservative variants and safety gating. Semantic aliases (matching
-  # "elbow pads" for a title of "Grey Elbow Pads") are deliberately NOT
+  # "carry case" for a title of "Widget Carry Case") are deliberately NOT
   # invented here — those are manual, admin-approved decisions.
   #
   # Returns [{ phrase:, state:, reason: }] where state is :auto_active or
@@ -18,8 +18,8 @@ module SitemapAutolink
         gloves boot boots shirt shirts hat hats pin pins kit kits set sets
         tube tubing hose hoses wire wires label labels sticker stickers strap
         straps clip clips light lights sound sounds board boards frame frames
-        pad pads foam metal plastic resin rubber leather ghost ghosts slime
-        trap traps wand wands gun guns box boxes bag bags case cases cover
+        pad pads foam metal plastic resin rubber leather gun guns box boxes
+        bag bags case cases cover
         covers grip grips handle handles mount mounts screw screws spring
         springs magnet magnets battery batteries speaker speakers red blue
         green grey gray black white yellow orange brown purple pink gold
