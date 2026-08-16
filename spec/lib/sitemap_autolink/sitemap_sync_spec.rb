@@ -41,6 +41,8 @@ RSpec.describe SitemapAutolink::SitemapSync do
     expect(entry.title_source).to eq("page")
     expect(entry.terms.linkable.pluck(:normalized_phrase)).to include("widget frame kit")
     expect(report[:phrases_added]).to include("widget frame kit")
+    expect(report[:pages_fetched]).to eq(1)
+    expect(report[:notes].join).to include("fetched 1 pages")
   end
 
   it "expands sitemap indexes into their child sitemaps" do
@@ -171,6 +173,33 @@ RSpec.describe SitemapAutolink::SitemapSync do
     build_sync(responses).run!
     expect(entry.reload.title).to eq("Foreman's Field Guide")
     expect(entry.title_source).to eq("page")
+  end
+
+  it "persists the heal even when the page title equals the slug title" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/wiki/martin-jarvis", nil]]),
+      "#{base}/wiki/martin-jarvis" => nil,
+    }
+    build_sync(responses).run!
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/wiki/martin-jarvis")
+    expect(entry.title_source).to eq("slug")
+    expect(entry.title).to eq("Martin Jarvis")
+
+    responses["#{base}/wiki/martin-jarvis"] = page_html("Martin Jarvis")
+    build_sync(responses).run!
+    expect(entry.reload.title_source).to eq("page")
+
+    fetches = []
+    described_class.new(
+      sources: sources,
+      title_suffixes: [],
+      page_fetch_delay_ms: 0,
+      http_get: ->(url, _max) do
+        fetches << url
+        responses[url]
+      end,
+    ).run!
+    expect(fetches).to eq(["#{base}/sitemap-products.xml"])
   end
 
   it "skips URLs matching excluded patterns and counts them" do
@@ -309,9 +338,49 @@ RSpec.describe SitemapAutolink::SitemapSync do
     }
     report = build_sync(responses, time_budget_minutes: 0).run!
 
-    expect(report[:errors].join).to include("time budget")
+    expect(report[:partial]).to be(true)
+    expect(report[:errors]).to be_empty
+    expect(report[:notes].join).to include("time budget")
     expect(report[:seen]).to eq(0)
     expect(SitemapAutolinkEntry.count).to eq(0)
+  end
+
+  it "never marks entries removed during a partial run" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha"),
+    }
+    build_sync(responses).run!
+
+    report = build_sync(responses, time_budget_minutes: 0).run!
+    expect(report[:partial]).to be(true)
+    expect(SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget").removed_from_source).to be(false)
+  end
+
+  it "stops cleanly when a cancel is requested mid-run" do
+    responses = {
+      "#{base}/sitemap-products.xml" =>
+        sitemap_xml([["/shop/widget-alpha", nil], ["/shop/widget-beta", nil]]),
+      "#{base}/shop/widget-alpha" => page_html("Widget Alpha Kit"),
+      "#{base}/shop/widget-beta" => page_html("Widget Beta Kit"),
+    }
+    sync =
+      described_class.new(
+        sources: sources,
+        title_suffixes: [],
+        page_fetch_delay_ms: 0,
+        http_get: ->(url, _max) do
+          described_class.request_cancel! if url.include?("widget-alpha")
+          responses[url]
+        end,
+      )
+    report = sync.run!
+
+    expect(report[:partial]).to be(true)
+    expect(report[:notes].join).to include("cancelled")
+    expect(report[:seen]).to eq(1)
+    expect(SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget-alpha")).to be_present
+    expect(SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget-beta")).to be_nil
   end
 
   it "reports live progress through on_progress" do

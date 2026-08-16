@@ -42,6 +42,17 @@ RSpec.describe Jobs::SitemapAutolinkSync do
     expect(run.sources).to include("example.com")
   end
 
+  it "records a time-budget stop as successful-but-partial, not failed" do
+    report[:partial] = true
+    report[:notes] = ["stopped at the 30-minute time budget after 12 URLs"]
+    described_class.new.execute(triggered_by: "manual")
+
+    run = SitemapAutolinkSyncRun.recent.first
+    expect(run.success).to be(true)
+    expect(run.partial).to be(true)
+    expect(run.error_details).to include("time budget")
+  end
+
   it "records failures with error details" do
     report[:errors] << "failed to fetch sitemap https://example.com/sitemap.xml"
     described_class.new.execute({})

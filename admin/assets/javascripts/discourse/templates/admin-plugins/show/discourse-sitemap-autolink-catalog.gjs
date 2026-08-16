@@ -26,6 +26,12 @@ export default <template>
           @label="sitemap_autolink.admin.refresh"
           @action={{@controller.refreshAll}}
         />
+        {{#if @controller.syncRunning}}
+          <actions.Default
+            @label="sitemap_autolink.admin.cancel_run"
+            @action={{@controller.cancelSync}}
+          />
+        {{/if}}
       </:actions>
     </DPageSubheader>
 
@@ -145,6 +151,8 @@ export default <template>
                 <td>
                   {{#if (eq run.result "ok")}}
                     {{i18n "sitemap_autolink.admin.run_ok"}}
+                  {{else if (eq run.result "partial")}}
+                    {{i18n "sitemap_autolink.admin.run_partial"}}
                   {{else if (eq run.result "running")}}
                     {{i18n "sitemap_autolink.admin.run_running"}}
                   {{else if (eq run.result "interrupted")}}

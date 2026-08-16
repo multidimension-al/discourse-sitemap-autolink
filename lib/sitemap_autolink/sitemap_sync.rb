@@ -20,8 +20,21 @@ module SitemapAutolink
     # a byte every few seconds can otherwise pin a fetch (and the whole
     # sync) indefinitely.
     MAX_FETCH_SECONDS = 30
+    CANCEL_KEY = "sitemap_autolink_cancel_requested"
 
     attr_reader :report
+
+    # Admin-requested cancellation of the currently running sync: sets a
+    # short-lived redis flag the run polls between URLs. The run stops
+    # CLEANLY (recorded as partial, with a note), keeping all work done
+    # so far — no SSH surgery required to stop a sync.
+    def self.request_cancel!
+      Discourse.redis.setex(CANCEL_KEY, 3600, "1") if defined?(Discourse)
+    end
+
+    def self.clear_cancel!
+      Discourse.redis.del(CANCEL_KEY) if defined?(Discourse)
+    end
 
     # sources: [{ url:, type: }]; defaults to the site setting
     #   ("https://example.com/sitemap-products.xml,products|…").
@@ -88,6 +101,11 @@ module SitemapAutolink
         phrases_added: [],
         phrases_removed: [],
         errors: [],
+        notes: [],
+        partial: false,
+        pages_fetched: 0,
+        fetch_seconds: 0.0,
+        slowest_fetches: [],
         sources: @sources.map { |s| "#{s[:url]} (#{s[:type]})" },
       }
     end
@@ -98,10 +116,11 @@ module SitemapAutolink
       now = Time.zone.now
       seen_urls = Set.new
       @deadline = monotime + @time_budget_minutes * 60
-      out_of_time = false
+      stop_early = false
+      self.class.clear_cancel!
 
       @sources.each do |source|
-        break if out_of_time
+        break if stop_early
         begin
           entries = fetch_sitemap_entries(source[:url])
           if entries.nil?
@@ -110,9 +129,19 @@ module SitemapAutolink
           end
           entries.each do |loc, lastmod|
             if monotime > @deadline
-              @report[:errors] << "stopped at the #{@time_budget_minutes.round}-minute time " \
+              # A budget stop is PARTIAL progress, not a failure — it
+              # gets its own state so real errors stay meaningful.
+              @report[:partial] = true
+              @report[:notes] << "stopped at the #{@time_budget_minutes.round}-minute time " \
                 "budget after #{@report[:seen]} URLs; the next sync picks up where this left off"
-              out_of_time = true
+              stop_early = true
+              break
+            end
+            if cancel_requested?
+              @report[:partial] = true
+              @report[:notes] << "cancelled by admin after #{@report[:seen]} URLs; " \
+                "work completed so far is kept"
+              stop_early = true
               break
             end
             url = SitemapAutolinkEntry.normalize_url(loc)
@@ -134,12 +163,28 @@ module SitemapAutolink
       reclean_titles
 
       begin
-        mark_removed(seen_urls, now) if @report[:errors].empty?
+        # Removal detection needs a COMPLETE pass over every source; a
+        # partial run must not disable the unvisited tail of the catalog.
+        mark_removed(seen_urls, now) if @report[:errors].empty? && !@report[:partial]
       rescue => e
         @report[:errors] << "mark_removed: #{e.class} #{e.message}"
       end
+      # Fetch telemetry in the run details: an average that climbs run
+      # over run (or a slowest-list full of one host) is the in-product
+      # evidence of server-side throttling of the sync's requests.
+      if @report[:pages_fetched] > 0
+        avg = @report[:fetch_seconds] / @report[:pages_fetched]
+        slowest =
+          @report[:slowest_fetches].map { |(u, s)| "#{u} (#{s}s)" }.join(", ")
+        @report[:notes] << "fetched #{@report[:pages_fetched]} pages in " \
+          "#{@report[:fetch_seconds].round}s (avg #{avg.round(2)}s); slowest: #{slowest}"
+      end
+
       Catalog.bump_version!
-      @report[:errors].each { |e| Rails.logger.warn("sitemap-autolink sync: #{e}") } if defined?(Rails)
+      if defined?(Rails)
+        @report[:errors].each { |e| Rails.logger.warn("sitemap-autolink sync: #{e}") }
+        @report[:notes].each { |n| Rails.logger.info("sitemap-autolink sync: #{n}") }
+      end
       @report
     end
 
@@ -214,6 +259,10 @@ module SitemapAutolink
       xml.match?(%r{</\s*(urlset|sitemapindex)\s*>}i)
     end
 
+    def cancel_requested?
+      defined?(Discourse) && Discourse.redis.get(CANCEL_KEY).present?
+    end
+
     def monotime
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
@@ -257,15 +306,23 @@ module SitemapAutolink
       slug_title = entry.title_source == "slug"
       if changed || slug_title
         title, title_source = throttled_resolve_title(url)
-        if title_source == "page" && title != entry.title
-          entry.update!(
-            title: title,
-            title_source: title_source,
-            lastmod: lastmod,
-            last_seen_at: now,
-          )
-          regenerate_terms(entry)
-          @report[:title_changed] << url
+        if title_source == "page"
+          if title != entry.title
+            entry.update!(
+              title: title,
+              title_source: title_source,
+              lastmod: lastmod,
+              last_seen_at: now,
+            )
+            regenerate_terms(entry)
+            @report[:title_changed] << url
+          else
+            # The fetched title can be IDENTICAL to the stored slug title
+            # (wiki pages named exactly like their slug, e.g. a person's
+            # name). The heal must still flip title_source to "page", or
+            # the entry re-downloads its page on every sync forever.
+            entry.update!(title_source: "page", lastmod: lastmod, last_seen_at: now)
+          end
           return
         end
         entry.update!(lastmod: lastmod, last_seen_at: now)
@@ -345,10 +402,21 @@ module SitemapAutolink
     end
 
     def resolve_title(url)
+      started = monotime
       body = to_utf8(@http_get.call(url, MAX_TITLE_BYTES))
+      record_fetch_time(url, monotime - started)
       title = body && title_from_html(body)
       return [title, "page"] if title.present?
       [title_from_slug(url), "slug"]
+    end
+
+    def record_fetch_time(url, elapsed)
+      @report[:pages_fetched] += 1
+      @report[:fetch_seconds] += elapsed
+      slowest = @report[:slowest_fetches]
+      slowest << [url, elapsed.round(1)]
+      slowest.sort_by! { |(_u, s)| -s }
+      slowest.pop while slowest.size > 5
     end
 
     def title_from_html(html)
