@@ -145,6 +145,8 @@ export default <template>
                 <td>
                   {{#if (eq run.result "ok")}}
                     {{i18n "sitemap_autolink.admin.run_ok"}}
+                  {{else if (eq run.result "partial")}}
+                    {{i18n "sitemap_autolink.admin.run_partial"}}
                   {{else if (eq run.result "running")}}
                     {{i18n "sitemap_autolink.admin.run_running"}}
                   {{else if (eq run.result "interrupted")}}

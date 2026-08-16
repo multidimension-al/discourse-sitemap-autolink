@@ -309,9 +309,23 @@ RSpec.describe SitemapAutolink::SitemapSync do
     }
     report = build_sync(responses, time_budget_minutes: 0).run!
 
-    expect(report[:errors].join).to include("time budget")
+    expect(report[:partial]).to be(true)
+    expect(report[:errors]).to be_empty
+    expect(report[:notes].join).to include("time budget")
     expect(report[:seen]).to eq(0)
     expect(SitemapAutolinkEntry.count).to eq(0)
+  end
+
+  it "never marks entries removed during a partial run" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha"),
+    }
+    build_sync(responses).run!
+
+    report = build_sync(responses, time_budget_minutes: 0).run!
+    expect(report[:partial]).to be(true)
+    expect(SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget").removed_from_source).to be(false)
   end
 
   it "reports live progress through on_progress" do

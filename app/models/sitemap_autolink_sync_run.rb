@@ -14,6 +14,7 @@ class SitemapAutolinkSyncRun < ActiveRecord::Base
     run.update!(
       finished_at: Time.zone.now,
       success: report[:errors].blank?,
+      partial: !!report[:partial],
       urls_seen: report[:seen].to_i,
       urls_excluded: report[:excluded].to_i,
       entries_added: report[:added].size,
@@ -21,7 +22,7 @@ class SitemapAutolinkSyncRun < ActiveRecord::Base
       entries_removed: report[:removed].size,
       phrases_added: report[:phrases_added].size,
       phrases_removed: report[:phrases_removed].size,
-      error_details: report[:errors].first(20).join("\n").presence,
+      error_details: (report[:errors].first(20) + Array(report[:notes])).join("\n").presence,
       sources: report[:sources]&.join("\n"),
     )
     [run, report]

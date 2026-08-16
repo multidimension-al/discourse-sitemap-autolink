@@ -232,9 +232,15 @@ class SitemapAutolinkAdminController < Admin::AdminController
   # A run's counts and success flag are written only when it completes,
   # so an open row is NOT a failure: it is either running right now or
   # was killed mid-run by a restart. Say which, instead of rendering
-  # "FAILED 0 0 0 0" for a sync that is happily working.
+  # "FAILED 0 0 0 0" for a sync that is happily working. A completed
+  # run that stopped at its time budget is "partial", not "failed" —
+  # FAILED stays reserved for actual errors.
   def run_result(run)
-    return (run.success ? "ok" : "failed") if run.finished_at.present?
+    if run.finished_at.present?
+      return "failed" if !run.success
+      return "partial" if run.partial
+      return "ok"
+    end
     run.started_at && run.started_at > 2.hours.ago ? "running" : "interrupted"
   end
 
@@ -244,6 +250,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
       started_at: run.started_at,
       finished_at: run.finished_at,
       success: run.success,
+      partial: run.partial,
       result: run_result(run),
       triggered_by: run.triggered_by,
       urls_seen: run.urls_seen,

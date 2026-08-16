@@ -88,6 +88,8 @@ module SitemapAutolink
         phrases_added: [],
         phrases_removed: [],
         errors: [],
+        notes: [],
+        partial: false,
         sources: @sources.map { |s| "#{s[:url]} (#{s[:type]})" },
       }
     end
@@ -110,7 +112,10 @@ module SitemapAutolink
           end
           entries.each do |loc, lastmod|
             if monotime > @deadline
-              @report[:errors] << "stopped at the #{@time_budget_minutes.round}-minute time " \
+              # A budget stop is PARTIAL progress, not a failure — it
+              # gets its own state so real errors stay meaningful.
+              @report[:partial] = true
+              @report[:notes] << "stopped at the #{@time_budget_minutes.round}-minute time " \
                 "budget after #{@report[:seen]} URLs; the next sync picks up where this left off"
               out_of_time = true
               break
@@ -134,12 +139,17 @@ module SitemapAutolink
       reclean_titles
 
       begin
-        mark_removed(seen_urls, now) if @report[:errors].empty?
+        # Removal detection needs a COMPLETE pass over every source; a
+        # partial run must not disable the unvisited tail of the catalog.
+        mark_removed(seen_urls, now) if @report[:errors].empty? && !@report[:partial]
       rescue => e
         @report[:errors] << "mark_removed: #{e.class} #{e.message}"
       end
       Catalog.bump_version!
-      @report[:errors].each { |e| Rails.logger.warn("sitemap-autolink sync: #{e}") } if defined?(Rails)
+      if defined?(Rails)
+        @report[:errors].each { |e| Rails.logger.warn("sitemap-autolink sync: #{e}") }
+        @report[:notes].each { |n| Rails.logger.info("sitemap-autolink sync: #{n}") }
+      end
       @report
     end
 
