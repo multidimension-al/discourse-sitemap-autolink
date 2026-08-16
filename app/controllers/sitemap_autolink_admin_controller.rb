@@ -204,6 +204,11 @@ class SitemapAutolinkAdminController < Admin::AdminController
     render json: success_json
   end
 
+  def cancel_sync
+    SitemapAutolink::SitemapSync.request_cancel!
+    render json: success_json
+  end
+
   def rebuild
     bump
     render json: success_json.merge(catalog_version: SitemapAutolink::Catalog.version)

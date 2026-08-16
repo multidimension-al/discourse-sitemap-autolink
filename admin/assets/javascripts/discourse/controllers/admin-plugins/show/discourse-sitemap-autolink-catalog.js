@@ -185,6 +185,20 @@ export default class AdminPluginsShowSitemapAutolinkCatalogController extends Co
     }, POLL_INTERVAL);
   }
 
+  get syncRunning() {
+    return this.syncing || this.runs[0]?.result === "running";
+  }
+
+  @action
+  async cancelSync() {
+    try {
+      await ajax(`${BASE}/sync/cancel`, { type: "POST" });
+      this.notice = i18n("sitemap_autolink.admin.cancel_requested");
+    } catch (e) {
+      popupAjaxError(e);
+    }
+  }
+
   @action
   async runPreview() {
     this.previewLoading = true;

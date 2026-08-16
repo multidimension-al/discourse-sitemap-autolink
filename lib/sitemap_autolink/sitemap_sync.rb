@@ -20,8 +20,21 @@ module SitemapAutolink
     # a byte every few seconds can otherwise pin a fetch (and the whole
     # sync) indefinitely.
     MAX_FETCH_SECONDS = 30
+    CANCEL_KEY = "sitemap_autolink_cancel_requested"
 
     attr_reader :report
+
+    # Admin-requested cancellation of the currently running sync: sets a
+    # short-lived redis flag the run polls between URLs. The run stops
+    # CLEANLY (recorded as partial, with a note), keeping all work done
+    # so far — no SSH surgery required to stop a sync.
+    def self.request_cancel!
+      Discourse.redis.setex(CANCEL_KEY, 3600, "1") if defined?(Discourse)
+    end
+
+    def self.clear_cancel!
+      Discourse.redis.del(CANCEL_KEY) if defined?(Discourse)
+    end
 
     # sources: [{ url:, type: }]; defaults to the site setting
     #   ("https://example.com/sitemap-products.xml,products|…").
@@ -103,10 +116,11 @@ module SitemapAutolink
       now = Time.zone.now
       seen_urls = Set.new
       @deadline = monotime + @time_budget_minutes * 60
-      out_of_time = false
+      stop_early = false
+      self.class.clear_cancel!
 
       @sources.each do |source|
-        break if out_of_time
+        break if stop_early
         begin
           entries = fetch_sitemap_entries(source[:url])
           if entries.nil?
@@ -120,7 +134,14 @@ module SitemapAutolink
               @report[:partial] = true
               @report[:notes] << "stopped at the #{@time_budget_minutes.round}-minute time " \
                 "budget after #{@report[:seen]} URLs; the next sync picks up where this left off"
-              out_of_time = true
+              stop_early = true
+              break
+            end
+            if cancel_requested?
+              @report[:partial] = true
+              @report[:notes] << "cancelled by admin after #{@report[:seen]} URLs; " \
+                "work completed so far is kept"
+              stop_early = true
               break
             end
             url = SitemapAutolinkEntry.normalize_url(loc)
@@ -236,6 +257,10 @@ module SitemapAutolink
 
     def complete_sitemap?(xml)
       xml.match?(%r{</\s*(urlset|sitemapindex)\s*>}i)
+    end
+
+    def cancel_requested?
+      defined?(Discourse) && Discourse.redis.get(CANCEL_KEY).present?
     end
 
     def monotime

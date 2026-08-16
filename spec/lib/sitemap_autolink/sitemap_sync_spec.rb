@@ -357,6 +357,32 @@ RSpec.describe SitemapAutolink::SitemapSync do
     expect(SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget").removed_from_source).to be(false)
   end
 
+  it "stops cleanly when a cancel is requested mid-run" do
+    responses = {
+      "#{base}/sitemap-products.xml" =>
+        sitemap_xml([["/shop/widget-alpha", nil], ["/shop/widget-beta", nil]]),
+      "#{base}/shop/widget-alpha" => page_html("Widget Alpha Kit"),
+      "#{base}/shop/widget-beta" => page_html("Widget Beta Kit"),
+    }
+    sync =
+      described_class.new(
+        sources: sources,
+        title_suffixes: [],
+        page_fetch_delay_ms: 0,
+        http_get: ->(url, _max) do
+          described_class.request_cancel! if url.include?("widget-alpha")
+          responses[url]
+        end,
+      )
+    report = sync.run!
+
+    expect(report[:partial]).to be(true)
+    expect(report[:notes].join).to include("cancelled")
+    expect(report[:seen]).to eq(1)
+    expect(SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget-alpha")).to be_present
+    expect(SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget-beta")).to be_nil
+  end
+
   it "reports live progress through on_progress" do
     responses = {
       "#{base}/sitemap-products.xml" =>
