@@ -257,7 +257,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
       return "partial" if run.partial
       return "ok"
     end
-    run.started_at && run.started_at > 2.hours.ago ? "running" : "interrupted"
+    run.started_at && run.started_at > SitemapAutolinkSyncRun.stale_after.ago ? "running" : "interrupted"
   end
 
   def serialize_run(run)

@@ -38,7 +38,7 @@ module Jobs
       # don't sit in the history as unexplained failures.
       SitemapAutolinkSyncRun
         .where(finished_at: nil, error_details: nil)
-        .where("started_at < ?", 2.hours.ago)
+        .where("started_at < ?", SitemapAutolinkSyncRun.stale_after.ago)
         .update_all(
           success: false,
           error_details:
