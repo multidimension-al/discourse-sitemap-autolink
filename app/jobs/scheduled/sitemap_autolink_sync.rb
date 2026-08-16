@@ -14,6 +14,24 @@ module Jobs
       return if !SiteSetting.sitemap_autolink_sync_enabled && triggered_by == "schedule"
       return if SiteSetting.sitemap_autolink_sources.blank?
 
+      # An admin cancel suppresses queued/new syncs for its lifetime —
+      # a backlog of Sync-now clicks must not revive cancelled work.
+      if SitemapAutolink::SitemapSync.cancel_requested?
+        Rails.logger.info("sitemap-autolink sync: skipped (#{triggered_by}) — admin cancel in effect")
+        return
+      end
+
+      # Single-flight: exactly one sync at a time. Duplicate queued
+      # clicks skip instead of running concurrently and contending on
+      # the same entries. TTL covers the worst-case run plus slack, so
+      # a killed run can never wedge future syncs.
+      lock_ttl = SiteSetting.sitemap_autolink_sync_time_budget_minutes * 60 + 300
+      lock_key = SitemapAutolink::SitemapSync::RUNNING_LOCK_KEY
+      if !Discourse.redis.set(lock_key, Time.now.to_i.to_s, ex: lock_ttl, nx: true)
+        Rails.logger.info("sitemap-autolink sync: skipped (#{triggered_by}) — another sync is already running")
+        return
+      end
+
       # A deploy/rebuild or Sidekiq restart can kill a sync mid-run
       # (shutdown interrupts bypass normal error handling), leaving its
       # audit row open with no counts and no error. Label those so they
@@ -28,31 +46,35 @@ module Jobs
               "Sidekiq restart); the sync did not finish and recorded no counts",
         )
 
-      _run, report =
-        SitemapAutolinkSyncRun.record(triggered_by: triggered_by) do |run|
-          # Mirror progress into the run row (at most every 10s) so the
-          # admin page shows a climbing URL count for a Running… sync —
-          # a frozen count means a stalled run, a climbing one means
-          # "working, be patient".
-          last_update = 0.0
-          on_progress = ->(seen) do
-            mono = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-            if mono - last_update >= 10
-              last_update = mono
-              run.update_columns(urls_seen: seen)
+      begin
+        _run, report =
+          SitemapAutolinkSyncRun.record(triggered_by: triggered_by) do |run|
+            # Mirror progress into the run row (at most every 10s) so the
+            # admin page shows a climbing URL count for a Running… sync —
+            # a frozen count means a stalled run, a climbing one means
+            # "working, be patient".
+            last_update = 0.0
+            on_progress = ->(seen) do
+              mono = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+              if mono - last_update >= 10
+                last_update = mono
+                run.update_columns(urls_seen: seen)
+              end
             end
+            SitemapAutolink::SitemapSync.new(on_progress: on_progress).run!
           end
-          SitemapAutolink::SitemapSync.new(on_progress: on_progress).run!
-        end
 
-      Rails.logger.info(
-        "sitemap-autolink sync (#{triggered_by}): #{report[:seen]} urls seen, " \
-          "#{report[:excluded]} excluded by pattern, #{report[:added].size} added, " \
-          "#{report[:title_changed].size} retitled, #{report[:removed].size} removed, " \
-          "#{report[:errors].size} errors",
-      )
+        Rails.logger.info(
+          "sitemap-autolink sync (#{triggered_by}): #{report[:seen]} urls seen, " \
+            "#{report[:excluded]} excluded by pattern, #{report[:added].size} added, " \
+            "#{report[:title_changed].size} retitled, #{report[:removed].size} removed, " \
+            "#{report[:errors].size} errors",
+        )
 
-      auto_rebake(report)
+        auto_rebake(report)
+      ensure
+        Discourse.redis.del(lock_key)
+      end
     end
 
     private

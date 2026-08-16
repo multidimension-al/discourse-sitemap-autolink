@@ -200,6 +200,17 @@ class SitemapAutolinkAdminController < Admin::AdminController
   end
 
   def sync
+    if Discourse.redis.get(SitemapAutolink::SitemapSync::RUNNING_LOCK_KEY).present?
+      return(
+        render json:
+                 failed_json.merge(
+                   error: "A synchronization is already running — cancel it or wait for it to finish.",
+                 ),
+               status: 409
+      )
+    end
+    # A deliberate Sync now lifts any lingering admin cancel.
+    SitemapAutolink::SitemapSync.clear_cancel!
     Jobs.enqueue(:sitemap_autolink_sync, triggered_by: "manual")
     render json: success_json
   end

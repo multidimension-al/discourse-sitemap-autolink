@@ -21,19 +21,26 @@ module SitemapAutolink
     # sync) indefinitely.
     MAX_FETCH_SECONDS = 30
     CANCEL_KEY = "sitemap_autolink_cancel_requested"
+    RUNNING_LOCK_KEY = "sitemap_autolink_sync_running_lock"
 
     attr_reader :report
 
-    # Admin-requested cancellation of the currently running sync: sets a
-    # short-lived redis flag the run polls between URLs. The run stops
-    # CLEANLY (recorded as partial, with a note), keeping all work done
-    # so far — no SSH surgery required to stop a sync.
+    # Admin-requested cancellation: sets a redis flag every running sync
+    # polls between URLs, so they stop CLEANLY (recorded as partial,
+    # with a note, all completed work kept). The flag deliberately
+    # lingers for 10 minutes and also suppresses NEW sync starts — a
+    # backlog of queued Sync-now clicks must not revive the work the
+    # admin just cancelled. An explicit Sync now clears it.
     def self.request_cancel!
-      Discourse.redis.setex(CANCEL_KEY, 3600, "1") if defined?(Discourse)
+      Discourse.redis.setex(CANCEL_KEY, 600, "1") if defined?(Discourse)
     end
 
     def self.clear_cancel!
       Discourse.redis.del(CANCEL_KEY) if defined?(Discourse)
+    end
+
+    def self.cancel_requested?
+      defined?(Discourse) && Discourse.redis.get(CANCEL_KEY).present?
     end
 
     # sources: [{ url:, type: }]; defaults to the site setting
@@ -117,7 +124,6 @@ module SitemapAutolink
       seen_urls = Set.new
       @deadline = monotime + @time_budget_minutes * 60
       stop_early = false
-      self.class.clear_cancel!
 
       @sources.each do |source|
         break if stop_early
@@ -260,7 +266,7 @@ module SitemapAutolink
     end
 
     def cancel_requested?
-      defined?(Discourse) && Discourse.redis.get(CANCEL_KEY).present?
+      self.class.cancel_requested?
     end
 
     def monotime
