@@ -63,6 +63,18 @@ RSpec.describe SitemapAutolink::SitemapSync do
     expect(report[:added]).to eq(["#{base}/shop/widget-frame-kit"])
   end
 
+  it "composes suffix fragments split by the | list separator" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/wiki/martin", nil]]),
+      "#{base}/wiki/martin" => page_html("Martin Jarvis - Example Wiki | Example.com"),
+    }
+    # "- Example Wiki | Example.com" cannot be one list entry, so admins
+    # enter the fragments; dangling-connector trimming composes them.
+    build_sync(responses, title_suffixes: [" - Example Wiki", "Example.com"]).run!
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/wiki/martin")
+    expect(entry.title).to eq("Martin Jarvis")
+  end
+
   it "strips configured title suffixes" do
     responses = {
       "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget-frame-kit", nil]]),

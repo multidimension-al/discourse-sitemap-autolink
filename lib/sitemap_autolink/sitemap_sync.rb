@@ -521,6 +521,13 @@ module SitemapAutolink
       clean_title(CGI.unescapeHTML(raw))
     end
 
+    # Connector punctuation left dangling at the END of a title after a
+    # suffix strip. Discourse list settings use | as the entry
+    # separator, so a suffix containing | ("… Wiki | Example.com") can
+    # only be configured as fragments — trimming dangling connectors
+    # between strips lets those fragments compose correctly.
+    TRAILING_SEPARATORS = /[\s|\-–—·:•]+\z/
+
     # Shared title hygiene: drop backslash-escaping of quotes leaking
     # from the source CMS (PHP addslashes artifacts like "Mattel\'s"),
     # then strip the configured suffixes repeatedly.
@@ -531,6 +538,7 @@ module SitemapAutolink
         stripped = @title_suffixes.find { |s| s.present? && title.downcase.end_with?(s.downcase) }
         break if stripped.nil?
         title = title[0, title.length - stripped.length].strip
+        title = title.sub(TRAILING_SEPARATORS, "").strip
       end
       title.presence
     end
