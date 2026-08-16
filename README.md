@@ -56,6 +56,121 @@ Performance, measured with a 5,000+ phrase catalog
 until the catalog changes), ~0.7 ms to scan a 2 KB post, ~1.9 ms for a
 full parse+scan+rewrite.
 
+## A worked example
+
+Say your community runs a technical wiki at `www.example.com`, and its
+sitemap lists five articles:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://www.example.com/wiki/soldering-iron-maintenance</loc><lastmod>2026-07-02</lastmod></url>
+  <url><loc>https://www.example.com/wiki/mosfet-driver-board</loc><lastmod>2026-07-05</lastmod></url>
+  <url><loc>https://www.example.com/wiki/li-ion-battery-pack</loc><lastmod>2026-07-11</lastmod></url>
+  <url><loc>https://www.example.com/wiki/pcb-etching</loc><lastmod>2026-07-19</lastmod></url>
+  <url><loc>https://www.example.com/wiki/flux</loc><lastmod>2026-07-23</lastmod></url>
+</urlset>
+```
+
+You configure two settings:
+
+| Setting | Value |
+| --- | --- |
+| `sitemap_autolink_sources` | `https://www.example.com/wiki-sitemap.xml,wiki` |
+| `sitemap_autolink_title_suffixes` | two entries: `- Example Wiki` and `Example.com` |
+
+**Step 1 — the sync reads the sitemap and fetches each page's
+`<title>`.** Like most sites, the wiki decorates every title with
+boilerplate, which the suffix list strips:
+
+| Fetched `<title>` | Stored title |
+| --- | --- |
+| Soldering Iron Maintenance - Example Wiki \| Example.com | Soldering Iron Maintenance |
+| MOSFET Driver Board - Example Wiki \| Example.com | MOSFET Driver Board |
+| Li-Ion Battery Pack - Example Wiki \| Example.com | Li-Ion Battery Pack |
+| PCB Etching - Example Wiki \| Example.com | PCB Etching |
+| Flux - Example Wiki \| Example.com | Flux |
+
+(Why two suffix *fragments*? The full boilerplate contains `|`, which
+is Discourse's list-setting separator, so it can't be one entry.
+Enter the pieces — after each strip the plugin trims the connector
+punctuation left dangling, so the fragments compose back into the
+whole suffix.)
+
+**Step 2 — each clean title becomes matching phrases, with safety
+gates.**
+
+| Stored title | Generated phrases | State |
+| --- | --- | --- |
+| Soldering Iron Maintenance | soldering iron maintenance(s) | active |
+| MOSFET Driver Board | mosfet driver board(s) | active |
+| Li-Ion Battery Pack | li-ion battery pack(s) | active |
+| PCB Etching | pcb etching(s) | active |
+| Flux | flux, fluxes | **pending review** — short, single word |
+
+"Flux" is exactly the kind of phrase that would wreck a forum if it
+auto-linked — it appears in every third post about soldering. The
+gates hold it in the review queue for a human: approve it, disable
+it, or give the entry a more specific manual alias (say, "flux pen")
+instead.
+
+**Step 3 — posts link themselves at cook time.** A member writes
+(and this raw text is never modified):
+
+> Rebuilt the driver stage last night using the mosfet driver board
+> design from the wiki, then cleaned the tips per soldering iron
+> maintenance. Flux everywhere, but the etching came out fine.
+
+The rendered post links the first mention of each active phrase:
+
+> Rebuilt the driver stage last night using the **[mosfet driver
+> board]** design from the wiki, then cleaned the tips per
+> **[soldering iron maintenance]**. Flux everywhere, but the etching
+> came out fine.
+
+as real anchors in the cooked HTML:
+
+```html
+… using the <a href="https://www.example.com/wiki/mosfet-driver-board"
+  class="sitemap-autolink sitemap-autolink-wiki"
+  data-sitemap-autolink="true" data-autolink-type="wiki"
+  data-autolink-term="mosfet driver board">mosfet driver board</a> design …
+```
+
+Notice what did **not** happen: matching is case-insensitive (the
+member typed "mosfet", the title says "MOSFET"); "Flux" stayed plain
+(still pending review); "etching" stayed plain (the phrase is "pcb
+etching" — fragments of phrases never match); and if the post
+mentioned the driver board five times, only the first mention links.
+
+## Why not just a hand-made word list?
+
+For five pages, a watched-words rule or a linkify-style word list does
+the same job. The difference is everything after day one:
+
+- **The wiki has 3,000 articles, not five** — and someone adds more
+  every week. Nobody types 3,000 phrase→URL pairs into a settings
+  field, and nobody maintains them afterwards. Here the sitemap *is*
+  the word list: a new article starts linking after the next sync, on
+  its own.
+- **Pages change.** Rename "PCB Etching" to "PCB Etching Guide" and
+  the phrases follow the new title automatically. Delete the article
+  and its link rules retire (existing posts clean up on their next
+  rebake); restore it and everything comes back. A manual list rots
+  silently.
+- **Scale needs judgment, not just automation.** Mechanically
+  generating phrases from thousands of titles produces some clunkers —
+  so the gates route short and generic candidates to a review queue
+  where approving or disabling is one click, and a collision report
+  shows when two pages claim the same phrase. You review the
+  exceptions instead of entering the data.
+- **The links are real.** They're inserted server-side into the cooked
+  HTML — visible to search engines, present in email notifications and
+  RSS, no JavaScript rewriting on every page view. And because raw is
+  never touched, disabling a rule (or the whole plugin) and rebaking
+  removes every trace.
+
+
 ## Requirements
 
 - Discourse 3.4 or later.
