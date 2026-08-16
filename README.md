@@ -75,7 +75,7 @@ hooks:
         cd: $home/plugins
         cmd:
           - git clone https://github.com/discourse/docker_manager.git
-          - git clone https://github.com/ajquick/discourse-sitemap-autolink.git
+          - git clone https://github.com/multidimension-al/discourse-sitemap-autolink.git
 ```
 
 ```sh
@@ -226,7 +226,7 @@ The sync is built to be a polite, bounded, observable crawler:
   (`sitemap_autolink_page_fetch_delay_ms`), and a hard **30-second cap
   per fetch** (shared across redirects, max 3), with no hidden HTTP
   retries. The fetcher identifies itself with the User-Agent
-  `discourse-sitemap-autolink (+https://github.com/ajquick/discourse-sitemap-autolink)`
+  `discourse-sitemap-autolink (+https://github.com/multidimension-al/discourse-sitemap-autolink)`
   (overridable in code if a WAF requires it).
 - **Time budget.** A run that hits
   `sitemap_autolink_sync_time_budget_minutes` stops cleanly, records
