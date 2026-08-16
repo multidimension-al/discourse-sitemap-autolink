@@ -113,6 +113,7 @@ module SitemapAutolink
         pages_fetched: 0,
         fetch_seconds: 0.0,
         slowest_fetches: [],
+        deferred_retries: 0,
         sources: @sources.map { |s| "#{s[:url]} (#{s[:type]})" },
       }
     end
@@ -181,9 +182,15 @@ module SitemapAutolink
       if @report[:pages_fetched] > 0
         avg = @report[:fetch_seconds] / @report[:pages_fetched]
         slowest =
-          @report[:slowest_fetches].map { |(u, s)| "#{u} (#{s}s)" }.join(", ")
+          @report[:slowest_fetches]
+            .map { |(u, s, trace)| trace ? "#{u} (#{s}s — #{trace})" : "#{u} (#{s}s)" }
+            .join(", ")
         @report[:notes] << "fetched #{@report[:pages_fetched]} pages in " \
           "#{@report[:fetch_seconds].round}s (avg #{avg.round(2)}s); slowest: #{slowest}"
+      end
+      if @report[:deferred_retries] > 0
+        @report[:notes] << "#{@report[:deferred_retries]} slow/unreachable pages are in " \
+          "title-retry backoff and were skipped this run"
       end
 
       Catalog.bump_version!
@@ -273,6 +280,11 @@ module SitemapAutolink
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
+    # 1 failure → retry tomorrow; then 2 days, 4 days, capped at weekly.
+    def title_retry_backoff(failures)
+      [2**[failures - 1, 0].max, 7].min.days
+    end
+
     def sync_entry(url, lastmod, content_type, now)
       entry = SitemapAutolinkEntry.find_by(url: url)
 
@@ -289,6 +301,8 @@ module SitemapAutolink
             auto_discovered: true,
             first_seen_at: now,
             last_seen_at: now,
+            title_fetch_failures: title_source == "slug" ? 1 : 0,
+            next_title_fetch_at: title_source == "slug" ? now + title_retry_backoff(1) : nil,
           )
         regenerate_terms(entry)
         @report[:added] << url
@@ -309,7 +323,19 @@ module SitemapAutolink
       end
 
       changed = lastmod.present? && lastmod != entry.lastmod
+      # Slug-titled entries retry their title fetch — but on a BACKOFF
+      # schedule after failures. A page slower than the fetch cap can
+      # never deliver a title, and without backoff such pages tax every
+      # run ~cap seconds each, forever (a lastmod change still forces a
+      # fresh attempt).
+      retry_due =
+        entry.next_title_fetch_at.nil? || entry.next_title_fetch_at <= now
       slug_title = entry.title_source == "slug"
+      if slug_title && !retry_due && !changed
+        @report[:deferred_retries] += 1
+        entry.update_columns(last_seen_at: now)
+        return
+      end
       if changed || slug_title
         title, title_source = throttled_resolve_title(url)
         if title_source == "page"
@@ -319,6 +345,8 @@ module SitemapAutolink
               title_source: title_source,
               lastmod: lastmod,
               last_seen_at: now,
+              title_fetch_failures: 0,
+              next_title_fetch_at: nil,
             )
             regenerate_terms(entry)
             @report[:title_changed] << url
@@ -327,11 +355,23 @@ module SitemapAutolink
             # (wiki pages named exactly like their slug, e.g. a person's
             # name). The heal must still flip title_source to "page", or
             # the entry re-downloads its page on every sync forever.
-            entry.update!(title_source: "page", lastmod: lastmod, last_seen_at: now)
+            entry.update!(
+              title_source: "page",
+              lastmod: lastmod,
+              last_seen_at: now,
+              title_fetch_failures: 0,
+              next_title_fetch_at: nil,
+            )
           end
           return
         end
-        entry.update!(lastmod: lastmod, last_seen_at: now)
+        failures = entry.title_fetch_failures + 1
+        entry.update!(
+          lastmod: lastmod,
+          last_seen_at: now,
+          title_fetch_failures: failures,
+          next_title_fetch_at: now + title_retry_backoff(failures),
+        )
         return
       end
 
@@ -420,9 +460,24 @@ module SitemapAutolink
       @report[:pages_fetched] += 1
       @report[:fetch_seconds] += elapsed
       slowest = @report[:slowest_fetches]
-      slowest << [url, elapsed.round(1)]
-      slowest.sort_by! { |(_u, s)| -s }
+      slowest << [url, elapsed.round(1), fetch_trace_summary]
+      slowest.sort_by! { |(_u, s, _t)| -s }
       slowest.pop while slowest.size > 5
+    end
+
+    # Compact phase breakdown of the last default_http_get call, so a
+    # slow fetch in the telemetry says WHERE the time went (connect,
+    # waiting for the first byte, hop count, exception class) instead
+    # of leaving it to guesswork.
+    def fetch_trace_summary
+      t = @fetch_trace
+      return nil if t.nil?
+      parts = []
+      parts << "#{t[:hops]} hops" if t[:hops].to_i > 1
+      parts << "connect #{t[:connect_s]}s" if t[:connect_s]
+      parts << "first byte #{t[:first_byte_s]}s" if t[:first_byte_s]
+      parts << t[:error] if t[:error]
+      parts.empty? ? nil : parts.join(", ")
     end
 
     def title_from_html(html)
@@ -500,35 +555,54 @@ module SitemapAutolink
     # Accumulates in binary (chunks arrive as ASCII-8BIT; mixing them
     # into a UTF-8 string raises Encoding::CompatibilityError on pages
     # with typographic characters); callers convert via to_utf8.
-    def default_http_get(url, max_bytes, redirects_left = 3)
+    # The deadline is set ONCE per top-level fetch and shared across
+    # redirect hops — per-hop clocks let a slow redirect chain (or a
+    # server that stalls before its first body byte) stack timeouts
+    # well past the intended cap.
+    def default_http_get(url, max_bytes, redirects_left = 3, deadline = nil)
+      if deadline.nil?
+        deadline = monotime + MAX_FETCH_SECONDS
+        @fetch_trace = { hops: 0 }
+      end
+      return nil if monotime > deadline
+      @fetch_trace[:hops] += 1
       uri = URI.parse(url)
       body = +"".b
+      started = monotime
       Net::HTTP.start(
         uri.host,
         uri.port,
         use_ssl: uri.scheme == "https",
         open_timeout: 10,
-        read_timeout: 20,
+        read_timeout: 15,
       ) do |http|
+        # Net::HTTP silently RETRIES an idempotent request once when the
+        # server kills the connection — stacking two full timeout waits
+        # onto one "fetch". Our retry policy lives in the backoff
+        # schedule, not hidden inside the HTTP client.
+        http.max_retries = 0
+        @fetch_trace[:connect_s] = (monotime - started).round(1)
+        requested = monotime
         request = Net::HTTP::Get.new(uri, "User-Agent" => @user_agent, "Accept" => "text/html,application/xml")
         http.request(request) do |response|
+          @fetch_trace[:first_byte_s] = (monotime - requested).round(1)
           if response.is_a?(Net::HTTPRedirection) && redirects_left.positive?
             location = response["location"]
             return nil if location.blank?
-            return default_http_get(URI.join(url, location).to_s, max_bytes, redirects_left - 1)
+            return default_http_get(URI.join(url, location).to_s, max_bytes, redirects_left - 1, deadline)
           end
           return nil unless response.is_a?(Net::HTTPSuccess)
-          fetch_deadline = monotime + MAX_FETCH_SECONDS
           response.read_body do |chunk|
             body << chunk
             break if body.bytesize >= max_bytes
-            break if monotime > fetch_deadline
+            break if monotime > deadline
             break if body.include?("</title>")
           end
         end
       end
       body
-    rescue StandardError
+    rescue StandardError => e
+      @fetch_trace[:error] = e.class.name if @fetch_trace
       nil
     end
   end
