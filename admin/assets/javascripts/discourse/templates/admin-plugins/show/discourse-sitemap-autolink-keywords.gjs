@@ -277,7 +277,9 @@ const StateFilter = <template>
           @disabled={{not @controller.hasPrevPage}}
           class="btn-small sitemap-autolink-admin__prev"
         />
-        <span>{{@controller.pageDisplay}}</span>
+        <span
+          class="sitemap-autolink-admin__page-indicator"
+        >{{@controller.pageDisplay}}</span>
         <DButton
           @label="sitemap_autolink.admin.next"
           @action={{@controller.nextPage}}

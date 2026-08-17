@@ -5,6 +5,13 @@ export default {
   name: "sitemap-autolink-analytics",
 
   initialize(container) {
+    // Listeners live on `document`, which outlives the application
+    // instance that registered them. If a previous instance went away
+    // without its teardown running, its handler is still attached and
+    // would double-count every click — so drop whatever is there before
+    // deciding whether to install anything.
+    this.teardown();
+
     const siteSettings = container.lookup("service:site-settings");
     if (!siteSettings.sitemap_autolink_analytics_enabled) {
       return;

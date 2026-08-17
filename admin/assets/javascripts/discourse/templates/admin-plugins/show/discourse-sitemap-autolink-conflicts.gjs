@@ -133,7 +133,9 @@ const Owners = <template>
             @disabled={{not @controller.collisionPage}}
             class="btn-small sitemap-autolink-admin__prev"
           />
-          <span>{{@controller.collisionsDisplay}}</span>
+          <span
+            class="sitemap-autolink-admin__page-indicator"
+          >{{@controller.collisionsDisplay}}</span>
           <DButton
             @label="sitemap_autolink.admin.next"
             @action={{@controller.nextCollisions}}
@@ -202,7 +204,9 @@ const Owners = <template>
             @disabled={{not @controller.overlapPage}}
             class="btn-small sitemap-autolink-admin__prev"
           />
-          <span>{{@controller.overlapsDisplay}}</span>
+          <span
+            class="sitemap-autolink-admin__page-indicator"
+          >{{@controller.overlapsDisplay}}</span>
           <DButton
             @label="sitemap_autolink.admin.next"
             @action={{@controller.nextOverlaps}}

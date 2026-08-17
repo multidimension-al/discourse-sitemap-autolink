@@ -372,15 +372,16 @@ acceptance("Sitemap Autolink | Admin | navigation", function (needs) {
     await visit(OVERVIEW);
 
     const nav = ".admin-plugin-config-page__top-nav-item a";
-    assert
-      .dom(nav)
-      .exists({ count: 4 }, "the plugin nav lists every page, not one Catalog");
 
     ["overview", "keywords", "conflicts", "logs"].forEach((page) => {
       assert
         .dom(`${nav}[href="${BASE}/${page}"]`)
         .hasText(i18n(`sitemap_autolink.admin.nav.${page}`));
     });
+
+    assert
+      .dom(`${nav}[href="${BASE}/catalog"]`)
+      .doesNotExist("the single Catalog page it replaced is gone");
   });
 
   test("each page loads its own data when opened", async function (assert) {
@@ -575,11 +576,11 @@ acceptance("Sitemap Autolink | Admin | keywords", function (needs) {
   test("pages paginate", async function (assert) {
     await visit(KEYWORDS);
 
-    assert.dom(".sitemap-autolink-admin__pagination span").hasText("1 / 2");
+    assert.dom(".sitemap-autolink-admin__page-indicator").hasText("1 / 2");
 
     await click(".sitemap-autolink-admin__next");
     assert.strictEqual(lastRequest("entries").queryParams.page, "1");
-    assert.dom(".sitemap-autolink-admin__pagination span").hasText("2 / 2");
+    assert.dom(".sitemap-autolink-admin__page-indicator").hasText("2 / 2");
   });
 
   test("a keyword can be approved, disabled and deleted in place", async function (assert) {
