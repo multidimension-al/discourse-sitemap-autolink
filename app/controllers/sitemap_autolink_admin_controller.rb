@@ -415,7 +415,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
                  failed_json.merge(
                    error: "A synchronization is already running — cancel it or wait for it to finish.",
                  ),
-               status: 409
+               status: :conflict
       )
     end
     # A deliberate Sync now lifts any lingering admin cancel.
