@@ -48,24 +48,41 @@ module SitemapAutolink
 
     # Resolve candidates (tagged with node_index to preserve document
     # order across text nodes) into accepted matches, honoring:
-    #   - leftmost match wins, then longest, then lowest priority number
+    #   - the most SPECIFIC match wins: longest phrase first, then lowest
+    #     priority number, then document order
     #   - a span claimed by a limit-capped winner is not re-awarded
     #   - counter: per-destination and total per-post limits
+    #
+    # Specificity, not position, decides. Ranking by position instead
+    # hands every contest to the shortest phrase that happens to appear
+    # first: "frame kit" would beat the overlapping "widget frame kit",
+    # and a stray early "kit" would spend a page's whole per-post budget
+    # before its full name is ever reached — even when both point at the
+    # same destination. Equal-length candidates still fall back to
+    # document order, so repeated mentions of one phrase link the first.
     def self.resolve(candidates, counter)
       sorted =
         candidates.sort_by do |c|
-          [c[:node_index] || 0, c[:start], -c[:length], c[:rule][:priority] || 0]
+          [-c[:length], c[:rule][:priority] || 0, c[:node_index] || 0, c[:start]]
         end
       accepted = []
-      last_end = {}
+      claimed = Hash.new { |spans, node| spans[node] = [] }
       sorted.each do |candidate|
-        node = candidate[:node_index] || 0
-        next if candidate[:start] < (last_end[node] || 0)
-        last_end[node] = candidate[:start] + candidate[:length]
+        start = candidate[:start]
+        finish = start + candidate[:length]
+        spans = claimed[candidate[:node_index] || 0]
+        # Claimed spans are disjoint and kept ordered, so the first one
+        # ending after `start` is the only one that can overlap this
+        # candidate — and is where a non-overlapping one is inserted.
+        index = spans.bsearch_index { |span| span[1] > start } || spans.size
+        blocker = spans[index]
+        next if blocker && blocker[0] < finish
+        spans.insert(index, [start, finish])
         next unless counter.allows?(candidate[:rule][:url])
         counter.record(candidate[:rule][:url])
         accepted << candidate
       end
+      accepted.sort_by! { |c| [c[:node_index] || 0, c[:start]] }
       accepted
     end
 

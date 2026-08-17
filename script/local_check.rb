@@ -76,6 +76,46 @@ HTML
   problems
 end
 
+check "a page's budget buys its most specific mention",
+      <<~HTML,
+  <p>Any widget kit will do, but I fitted the deluxe widget kit.</p>
+HTML
+      rules:
+        RULES +
+          [
+            {
+              phrase: "deluxe widget kit",
+              url: "https://example.com/shop/widget-kit",
+              type: "product",
+              priority: 1,
+            },
+          ] do |html, inserted|
+  problems = []
+  problems << "expected 1 link, got #{inserted}" if inserted != 1
+  problems << "the stray early mention spent the budget" unless html.include?(">deluxe widget kit</a>")
+  problems
+end
+
+check "a longer phrase starting later still wins",
+      <<~HTML,
+  <p>A widget kit deluxe frame is what I need.</p>
+HTML
+      rules:
+        RULES +
+          [
+            {
+              phrase: "kit deluxe frame",
+              url: "https://example.com/shop/kit-deluxe-frame",
+              type: "product",
+              priority: 1,
+            },
+          ] do |html, inserted|
+  problems = []
+  problems << "expected 1 link, got #{inserted}" if inserted != 1
+  problems << "the shorter earlier phrase won" unless html.include?("kit-deluxe-frame")
+  problems
+end
+
 check "typographic apostrophe matches", <<~HTML do |html, inserted|
   <p>Check Foreman’s Field Guide for that part.</p>
 HTML
