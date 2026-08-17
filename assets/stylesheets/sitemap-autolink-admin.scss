@@ -184,6 +184,21 @@
     }
   }
 
+  // Said once per card, not once per keyword chip: when the page is
+  // out, every one of its keywords is out with it.
+  &__not-linking {
+    margin: 0.5em 0 0;
+    padding: 0.4em 0.6em;
+    border-radius: 0.25em;
+    background: var(--danger-low);
+    color: var(--danger);
+    font-size: var(--font-down-1);
+  }
+
+  &__filter-label {
+    color: var(--primary-medium);
+  }
+
   &__no-terms {
     color: var(--primary-medium);
   }

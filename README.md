@@ -279,7 +279,17 @@ searched on the server.
   and URLs, so searching a keyword finds the page that owns it. Filter
   by state (each chip carries its count) and by content type. A keyword
   another page also claims is marked *duplicate* right where you read
-  it. **Bulk actions address the whole current filter**, not the cards
+  it.
+
+  A keyword's state (*auto-active*, *approved*, *awaiting review*,
+  *disabled*) is **how it got through review, not whether it links**.
+  Linking also needs the page to be live, and the two come apart the
+  moment a page is disabled or drops out of your sitemap — that page
+  keeps every one of its auto-active keywords and fires none of them.
+  So the summary line counts matching keywords and linking keywords
+  separately, a card whose page is out says so plainly, and a **page
+  filter** isolates live pages, disabled ones, and the ones gone from
+  the sitemap. **Bulk actions address the whole current filter**, not the cards
   on screen — a review queue of thousands is cleared in one confirmed
   click, and the confirmation names the exact count first. The review
   queue is this page filtered to *Awaiting review*.
@@ -303,7 +313,9 @@ A JSON management API (staff-only) backs all of it under
 `/admin/plugins/discourse-sitemap-autolink/` — `status`, `entries`,
 `terms`, `collisions`, `overlaps`, `runs`, `sync`, `rebake` — if you
 prefer to script against it. Every list endpoint takes `page` and `q`;
-`entries` and `terms` also take `state` and `type`. The review queue is
+`entries` and `terms` also take `state` and `type`; `entries` also
+takes `page_state` (`live`, `disabled`, `removed`) and reports
+`linking_count` beside `state_counts`. The review queue is
 `entries?state=pending_review` (pages) or `terms?state=pending_review`
 (keywords).
 

@@ -101,6 +101,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
           id: SitemapAutolinkTerm.where(state: validated_state(params[:state])).select(:entry_id),
         )
     end
+    scope = apply_page_state(scope, params[:page_state])
     page = current_page
     total = scope.count
     records = scope.offset(page * PAGE_SIZE).limit(PAGE_SIZE).to_a
@@ -115,6 +116,12 @@ class SitemapAutolinkAdminController < Admin::AdminController
              # bulk actions beside them both act on phrases, and they
              # must agree about how many.
              state_counts: state_counts(term_scope(params)),
+             # A keyword's state says it passed review. Whether it LINKS
+             # also depends on its page still being live, and the two
+             # come apart constantly — a page filtered out of the
+             # sitemap keeps every one of its auto-active keywords.
+             # Reporting only the state would call those active.
+             linking_count: linking_count(params),
              entries: records.map { |e| serialize_entry(e, duplicates: duplicates) },
            }
   end
@@ -467,6 +474,30 @@ class SitemapAutolinkAdminController < Admin::AdminController
     SitemapAutolinkTerm.linkable.joins(:entry).merge(SitemapAutolinkEntry.active)
   end
 
+  # A page is "live" only when it is both enabled and still in the
+  # sitemap; those are separate columns and the difference matters, so
+  # the filter names them separately rather than offering one on/off.
+  def apply_page_state(scope, value)
+    case value
+    when "live"
+      scope.where(sitemap_autolink_entries: { enabled: true, removed_from_source: false })
+    when "disabled"
+      scope.where(sitemap_autolink_entries: { enabled: false })
+    when "removed"
+      scope.where(sitemap_autolink_entries: { removed_from_source: true })
+    else
+      scope
+    end
+  end
+
+  # Of the keywords the current filter selects, how many compile into a
+  # rule: linkable state AND a live page.
+  def linking_count(source)
+    scope = term_scope(source)
+    scope = scope.where(state: validated_state(source[:state])) if source[:state].present?
+    scope.merge(SitemapAutolinkTerm.linkable).merge(SitemapAutolinkEntry.active).count
+  end
+
   # Which of THIS page's phrases another page also claims, so a keyword
   # that is fought over is marked where the admin is reading it instead
   # of only in a report they have to go looking for. One extra query,
@@ -486,6 +517,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
   # and the per-state counts drawn beside it.
   def term_scope(source)
     scope = SitemapAutolinkTerm.joins(:entry)
+    scope = apply_page_state(scope, source[:page_state])
     if source[:type].present?
       scope = scope.where(sitemap_autolink_entries: { content_type: source[:type] })
     end

@@ -25,6 +25,7 @@ export default class AdminPluginsShowSitemapAutolinkKeywordsController extends C
   @tracked query = "";
   @tracked typeFilter = "";
   @tracked stateFilter = "";
+  @tracked pageState = "";
   @tracked page = 0;
 
   get entryTypes() {
@@ -53,6 +54,13 @@ export default class AdminPluginsShowSitemapAutolinkKeywordsController extends C
       : this.totalPhrases;
   }
 
+  // A keyword's state says it passed review; whether it links also
+  // depends on its page. The two come apart the moment a page is
+  // disabled or drops out of the sitemap, so the page says both.
+  get linkingCount() {
+    return this.data?.linking_count || 0;
+  }
+
   get pageDisplay() {
     return `${this.page + 1} / ${Math.max(this.data?.pages || 1, 1)}`;
   }
@@ -75,6 +83,9 @@ export default class AdminPluginsShowSitemapAutolinkKeywordsController extends C
     }
     if (this.stateFilter) {
       data.state = this.stateFilter;
+    }
+    if (this.pageState) {
+      data.page_state = this.pageState;
     }
     return data;
   }
@@ -106,6 +117,13 @@ export default class AdminPluginsShowSitemapAutolinkKeywordsController extends C
   @action
   setTypeFilter(event) {
     this.typeFilter = event.target.value;
+    this.page = 0;
+    this.load();
+  }
+
+  @action
+  setPageState(event) {
+    this.pageState = event.target.value;
     this.page = 0;
     this.load();
   }
@@ -154,6 +172,7 @@ export default class AdminPluginsShowSitemapAutolinkKeywordsController extends C
                 q: this.query,
                 state: this.stateFilter,
                 type: this.typeFilter,
+                page_state: this.pageState,
               },
             },
           });

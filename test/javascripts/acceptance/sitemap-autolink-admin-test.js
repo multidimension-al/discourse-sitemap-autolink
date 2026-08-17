@@ -115,6 +115,7 @@ function entriesPayload() {
       approved: 1,
       disabled: 1,
     },
+    linking_count: 2,
     entries: [
       {
         id: 11,
@@ -511,6 +512,51 @@ acceptance("Sitemap Autolink | Admin | keywords", function (needs) {
         i18n("sitemap_autolink.admin.slug_title"),
         "a page titled from its slug is flagged"
       );
+  });
+
+  // "auto-active" is how a keyword got through review, not a promise
+  // that it fires. A page filtered out of the sitemap keeps every one of
+  // its auto-active keywords and links none of them.
+  test("says plainly when a page cannot link, whatever its keywords say", async function (assert) {
+    state.entries = {
+      ...entriesPayload(),
+      total: 1,
+      linking_count: 0,
+      entries: [{ ...entriesPayload().entries[0], removed_from_source: true }],
+    };
+
+    await visit(KEYWORDS);
+
+    assert
+      .dom(
+        ".sitemap-autolink-admin__entry[data-entry-id='11'] .sitemap-autolink-admin__not-linking"
+      )
+      .hasText(
+        i18n("sitemap_autolink.admin.page_removed_explainer"),
+        "the card says the page is out, once, rather than per keyword"
+      );
+
+    assert.dom(".sitemap-autolink-admin__result-count").hasText(
+      i18n("sitemap_autolink.admin.result_summary", {
+        pages: 1,
+        phrases: 4,
+        linking: 0,
+      }),
+      "and the summary separates matching keywords from linking ones"
+    );
+  });
+
+  test("can isolate pages that dropped out of the sitemap", async function (assert) {
+    await visit(KEYWORDS);
+    await fillIn(".sitemap-autolink-admin__page-state-filter", "removed");
+
+    const request = lastRequest("entries");
+    assert.strictEqual(request.queryParams.page_state, "removed");
+    assert.strictEqual(
+      request.queryParams.page,
+      "0",
+      "and starts from page one"
+    );
   });
 
   test("marks a keyword another page also claims", async function (assert) {

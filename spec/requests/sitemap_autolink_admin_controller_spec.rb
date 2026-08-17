@@ -136,6 +136,57 @@ RSpec.describe SitemapAutolinkAdminController do
       expect(response.status).to eq(200)
       expect(response.parsed_body["entries"]).to be_empty
     end
+
+    # A keyword's state says it got through review. Whether it LINKS also
+    # depends on its page being live, and reporting only the state calls
+    # a page that was filtered out of the sitemap "auto-active".
+    describe "pages that cannot link" do
+      before do
+        entry.terms.create!(phrase: "Widget Frame Kit", origin: :generated, state: :auto_active)
+        wiki_entry.terms.create!(phrase: "Gasket Lore", origin: :generated, state: :auto_active)
+        wiki_entry.update!(removed_from_source: true)
+      end
+
+      it "counts a keyword as auto-active but not as linking" do
+        get "#{base}/entries"
+
+        json = response.parsed_body
+        expect(json["state_counts"]["auto_active"]).to eq(2)
+        expect(json["linking_count"]).to eq(1)
+      end
+
+      it "filters to the pages that dropped out of the sitemap" do
+        get "#{base}/entries", params: { page_state: "removed" }
+        expect(response.parsed_body["entries"].map { |e| e["id"] }).to eq([wiki_entry.id])
+        expect(response.parsed_body["linking_count"]).to eq(0)
+      end
+
+      it "filters to live pages, and to disabled ones" do
+        entry.update!(enabled: false)
+
+        get "#{base}/entries", params: { page_state: "live" }
+        expect(response.parsed_body["entries"]).to be_empty
+
+        get "#{base}/entries", params: { page_state: "disabled" }
+        expect(response.parsed_body["entries"].map { |e| e["id"] }).to eq([entry.id])
+      end
+
+      # The count beside a bulk button has to describe what the button
+      # would touch, so the page filter has to reach the keyword scope.
+      it "keeps a bulk change inside the page filter" do
+        put "#{base}/terms/bulk",
+            params: {
+              state: "disabled",
+              filter: {
+                page_state: "removed",
+              },
+            }
+
+        expect(response.parsed_body["updated"]).to eq(1)
+        expect(wiki_entry.terms.first.reload.state).to eq("disabled")
+        expect(entry.terms.first.reload.state).to eq("auto_active")
+      end
+    end
   end
 
   describe "entry mutation" do
