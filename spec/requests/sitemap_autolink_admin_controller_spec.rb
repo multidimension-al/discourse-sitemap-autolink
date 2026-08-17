@@ -189,10 +189,17 @@ RSpec.describe SitemapAutolinkAdminController do
         expect(json["linking_count"]).to eq(1)
       end
 
+      # Both directions: `merge` would replace the page filter's own
+      # condition rather than anding it, and answer each of these with
+      # the other one's count.
       it "filters to the pages that dropped out of the sitemap" do
         get "#{base}/entries", params: { page_state: "removed" }
         expect(response.parsed_body["entries"].map { |e| e["id"] }).to eq([wiki_entry.id])
         expect(response.parsed_body["linking_count"]).to eq(0)
+
+        get "#{base}/entries", params: { page_state: "live" }
+        expect(response.parsed_body["entries"].map { |e| e["id"] }).to eq([entry.id])
+        expect(response.parsed_body["linking_count"]).to eq(1)
       end
 
       it "filters to live pages, and to disabled ones" do

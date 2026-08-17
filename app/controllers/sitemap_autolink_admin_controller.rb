@@ -481,10 +481,6 @@ class SitemapAutolinkAdminController < Admin::AdminController
     )
   end
 
-  def linkable_terms
-    SitemapAutolinkTerm.linkable.joins(:entry).merge(SitemapAutolinkEntry.active)
-  end
-
   # A page is "live" only when it is both enabled and still in the
   # sitemap; those are separate columns and the difference matters, so
   # the filter names them separately rather than offering one on/off.
@@ -503,10 +499,20 @@ class SitemapAutolinkAdminController < Admin::AdminController
 
   # Of the keywords the current filter selects, how many compile into a
   # rule: linkable state AND a live page.
+  #
+  # Spelled out with `where` rather than merging the `active` scope on
+  # purpose. `merge` REPLACES a conflicting condition on the same column
+  # instead of anding it, so merging `removed_from_source: false` into a
+  # filter for `removed_from_source: true` quietly undid the filter and
+  # counted the live pages instead. Anded, the pair is a contradiction —
+  # which is the true answer: nothing on a removed page links.
   def linking_count(source)
     scope = term_scope(source)
     scope = scope.where(state: validated_state(source[:state])) if source[:state].present?
-    scope.merge(SitemapAutolinkTerm.linkable).merge(SitemapAutolinkEntry.active).count
+    scope
+      .where(state: SitemapAutolinkTerm::LINKABLE_STATES)
+      .where(sitemap_autolink_entries: { enabled: true, removed_from_source: false })
+      .count
   end
 
   # Which of THIS page's phrases another page also claims, so a keyword
