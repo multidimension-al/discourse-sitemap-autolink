@@ -14,6 +14,12 @@ export default class AdminPluginsShowSitemapAutolinkConflictsController extends 
   @tracked collisionPage = 0;
   @tracked overlapPage = 0;
 
+  // Always a number: the summary renders before the first load
+  // finishes, and i18n raises on an undefined interpolation value.
+  get competingCount() {
+    return this.collisions?.competing || 0;
+  }
+
   get collisionsDisplay() {
     return `${this.collisionPage + 1} / ${Math.max(this.collisions?.pages || 1, 1)}`;
   }

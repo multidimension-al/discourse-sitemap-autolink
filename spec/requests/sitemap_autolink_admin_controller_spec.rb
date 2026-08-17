@@ -211,8 +211,12 @@ RSpec.describe SitemapAutolinkAdminController do
       get "#{base}/terms", params: { q: "gasket" }
       expect(response.parsed_body["terms"].map { |t| t["phrase"] }).to eq(["Gasket Lore"])
 
+      # A URL match is a match on the page, so it returns every keyword
+      # that page owns — not only the one that reads like the URL.
       get "#{base}/terms", params: { q: "frame-kit" }
-      expect(response.parsed_body["terms"].map { |t| t["phrase"] }).to eq(["Widget Frame Kit"])
+      expect(response.parsed_body["terms"].map { |t| t["phrase"] }).to eq(
+        ["Kit", "Widget Frame Kit"],
+      )
     end
 
     it "treats LIKE wildcards in the query as literal text" do

@@ -80,7 +80,7 @@ const Owners = <template>
       <p class="sitemap-autolink-admin__hint">
         {{i18n
           "sitemap_autolink.admin.collisions_summary"
-          competing=@controller.collisions.competing
+          competing=@controller.competingCount
         }}
       </p>
       {{#if @controller.collisions.collisions.length}}
