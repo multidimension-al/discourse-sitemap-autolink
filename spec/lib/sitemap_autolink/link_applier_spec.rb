@@ -61,6 +61,22 @@ RSpec.describe SitemapAutolink::LinkApplier do
     expect(html).not_to match(/<a[^>]*><a/)
   end
 
+  # A page usually has both a short alias and its full name in the
+  # catalog. Whichever the post happens to mention first must not spend
+  # the page's whole per-post budget on the vaguer wording.
+  it "gives a destination's one link to its most specific mention" do
+    rules << {
+      phrase: "deluxe widget kit",
+      url: "https://example.com/shop/widget-kit",
+      type: "product",
+      priority: 1,
+    }
+
+    html, count = apply("<p>A widget kit is fine, but I fitted the deluxe widget kit.</p>")
+    expect(count).to eq(1)
+    expect(html).to include(">deluxe widget kit</a>")
+  end
+
   it "preserves surrounding text and original casing exactly" do
     html, _count = apply("<p>Before WIDGET KIT after.</p>")
     expect(html).to include(">WIDGET KIT</a>")

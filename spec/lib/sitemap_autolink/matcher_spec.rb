@@ -54,7 +54,7 @@ RSpec.describe SitemapAutolink::Matcher do
   describe ".resolve" do
     let(:counter) { SitemapAutolink::LinkCounter.new(max_per_destination: 1, max_total: 0) }
 
-    it "prefers leftmost, then longest, then priority" do
+    it "prefers the longest phrase, then priority" do
       short = rule("widget kit", "/wiki", priority: 3)
       long = rule("deluxe widget kit", "/shop", priority: 2)
       candidates = [
@@ -63,6 +63,32 @@ RSpec.describe SitemapAutolink::Matcher do
       ]
       accepted = described_class.resolve(candidates, counter)
       expect(accepted.map { |c| c[:rule][:url] }).to eq(["/shop"])
+    end
+
+    # Ranking by position would hand this to "widget kit" purely because
+    # it starts two characters earlier, burying the more specific phrase.
+    it "prefers a longer phrase that starts LATER than a shorter one" do
+      short = rule("widget kit", "/wiki")
+      long = rule("kit deluxe frame", "/shop")
+      candidates = [
+        { start: 0, length: 10, rule: short },
+        { start: 7, length: 16, rule: long },
+      ]
+      accepted = described_class.resolve(candidates, counter)
+      expect(accepted.map { |c| c[:rule][:url] }).to eq(["/shop"])
+    end
+
+    # The per-destination budget must buy the fullest mention of a page,
+    # not whichever stray word for it appeared first.
+    it "spends a destination's budget on its most specific mention" do
+      r = rule("widget kit", "/shop")
+      full = rule("deluxe widget kit", "/shop")
+      candidates = [
+        { start: 0, length: 10, rule: r },
+        { start: 40, length: 17, rule: full },
+      ]
+      accepted = described_class.resolve(candidates, counter)
+      expect(accepted.map { |c| c[:start] }).to eq([40])
     end
 
     it "lower priority number wins exact ties" do
@@ -99,7 +125,7 @@ RSpec.describe SitemapAutolink::Matcher do
       expect(accepted).to be_empty
     end
 
-    it "applies the total cap in document order" do
+    it "spends the total cap on the most specific matches" do
       candidates = [
         { start: 0, length: 5, rule: rule("alpha", "/1") },
         { start: 10, length: 4, rule: rule("beta", "/2") },
@@ -107,7 +133,18 @@ RSpec.describe SitemapAutolink::Matcher do
       ]
       limited = SitemapAutolink::LinkCounter.new(max_per_destination: 1, max_total: 2)
       accepted = described_class.resolve(candidates, limited)
-      expect(accepted.map { |c| c[:rule][:url] }).to eq(%w[/1 /2])
+      expect(accepted.map { |c| c[:rule][:url] }).to eq(%w[/1 /3])
+    end
+
+    it "returns accepted matches in document order" do
+      candidates = [
+        { start: 20, length: 5, rule: rule("gamma", "/3"), node_index: 1 },
+        { start: 0, length: 9, rule: rule("alphabeta", "/1"), node_index: 1 },
+        { start: 4, length: 4, rule: rule("beta", "/2"), node_index: 0 },
+      ]
+      unlimited = SitemapAutolink::LinkCounter.new(max_per_destination: 0, max_total: 0)
+      accepted = described_class.resolve(candidates, unlimited)
+      expect(accepted.map { |c| c[:rule][:url] }).to eq(%w[/2 /1 /3])
     end
   end
 end

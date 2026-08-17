@@ -7,18 +7,35 @@
 #   GET    /admin/plugins/discourse-sitemap-autolink/entries?q=&type=&enabled=&page=
 #   POST   /admin/plugins/discourse-sitemap-autolink/entries      (manual entry)
 #   PUT    /admin/plugins/discourse-sitemap-autolink/entries/:id  (enable/priority/url…)
+#   GET    /admin/plugins/discourse-sitemap-autolink/terms?q=&state=&type=&origin=&page=
 #   POST   /admin/plugins/discourse-sitemap-autolink/terms        (add alias)
+#   PUT    /admin/plugins/discourse-sitemap-autolink/terms/bulk   (ids= or filter[…]=)
 #   PUT    /admin/plugins/discourse-sitemap-autolink/terms/:id    (approve/disable…)
 #   DELETE /admin/plugins/discourse-sitemap-autolink/terms/:id
-#   GET    /admin/plugins/discourse-sitemap-autolink/collisions
-#   GET    /admin/plugins/discourse-sitemap-autolink/pending
+#   GET    /admin/plugins/discourse-sitemap-autolink/collisions?q=&page=
+#   GET    /admin/plugins/discourse-sitemap-autolink/overlaps?q=&page=
 #   POST   /admin/plugins/discourse-sitemap-autolink/sync
 #   POST   /admin/plugins/discourse-sitemap-autolink/rebuild
 #   POST   /admin/plugins/discourse-sitemap-autolink/rebake       (phrase= or all=true)
+#
+# Every list endpoint pages: a catalog with thousands of URLs behind it
+# has tens of thousands of phrases, and no view may try to hold them
+# all. The review queue is `terms?state=pending_review`.
 class SitemapAutolinkAdminController < Admin::AdminController
   requires_plugin SitemapAutolink::PLUGIN_NAME
 
   PAGE_SIZE = 50
+
+  # A bulk state change addresses either an explicit id list (what the
+  # page has on screen) or a whole filter (what the admin is looking
+  # at, which may be thousands of rows).
+  MAX_BULK_IDS = 1000
+
+  # The overlap report walks every phrase through the automaton. The cap
+  # bounds the response of a pathological catalog rather than the work,
+  # which is linear in total phrase length and takes ~50 ms at 7,500
+  # phrases.
+  MAX_OVERLAP_PAIRS = 5000
 
   def status
     last_run = SitemapAutolinkSyncRun.recent.first
@@ -32,7 +49,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
              active_entries: SitemapAutolinkEntry.active.count,
              terms: SitemapAutolinkTerm.count,
              pending_terms: SitemapAutolinkTerm.pending_review.count,
-             entry_types: SitemapAutolinkEntry.distinct.order(:content_type).pluck(:content_type),
+             entry_types: entry_types,
              enabled_types_setting: SiteSetting.sitemap_autolink_enabled_types,
              last_run: last_run && serialize_run(last_run),
            }
@@ -76,24 +93,66 @@ class SitemapAutolinkAdminController < Admin::AdminController
           id: SitemapAutolinkTerm.pending_review.select(:entry_id),
         )
     end
-    page = params[:page].to_i.clamp(0, 10_000)
+    page = current_page
     total = scope.count
     render json: {
              total: total,
              page: page,
              per_page: PAGE_SIZE,
-             pages: (total.to_f / PAGE_SIZE).ceil,
-             types: SitemapAutolinkEntry.distinct.order(:content_type).pluck(:content_type),
+             pages: page_count(total),
+             types: entry_types,
              entries:
                scope.offset(page * PAGE_SIZE).limit(PAGE_SIZE).map { |e| serialize_entry(e) },
            }
   end
 
-  # Bulk state change for terms, e.g. clearing a large review queue.
+  # The phrase-first view of the catalog: one row per keyword with the
+  # destination it points at. This is where a thousands-of-phrases
+  # catalog is actually managed, so it pages, searches phrase text as
+  # well as destination, and reports how the whole filtered set breaks
+  # down by state (`state_counts`) — the counts the review queue and
+  # the state filters are built from.
+  def terms
+    unfiltered_by_state = term_scope(params)
+    scope = unfiltered_by_state
+    scope = scope.where(state: validated_state(params[:state])) if params[:state].present?
+
+    page = current_page
+    total = scope.count
+    records =
+      scope
+        .preload(:entry)
+        .order("sitemap_autolink_terms.normalized_phrase", "sitemap_autolink_terms.id")
+        .offset(page * PAGE_SIZE)
+        .limit(PAGE_SIZE)
+    render json: {
+             total: total,
+             page: page,
+             per_page: PAGE_SIZE,
+             pages: page_count(total),
+             types: entry_types,
+             state_counts: state_counts(unfiltered_by_state),
+             terms: records.map { |t| serialize_term(t, entry: t.entry) },
+           }
+  end
+
+  # Bulk state change for terms: either an explicit id list, or every
+  # term matching a filter (`filter[q]`, `filter[state]`, `filter[type]`,
+  # `filter[origin]`). Clearing a review queue of thousands of phrases
+  # 50 rows at a time is not review, it is data entry — so the page can
+  # act on the whole filter it is showing, having named the count first.
   def bulk_terms
-    ids = Array(params[:ids]).map(&:to_i).first(500)
     state = validated_state(params.require(:state))
-    updated = SitemapAutolinkTerm.where(id: ids).update_all(state: SitemapAutolinkTerm.states[state], updated_at: Time.zone.now)
+    scope =
+      if params[:filter].present?
+        SitemapAutolinkTerm.where(
+          id: filtered_bulk_scope.select("sitemap_autolink_terms.id"),
+        )
+      else
+        SitemapAutolinkTerm.where(id: Array(params[:ids]).map(&:to_i).first(MAX_BULK_IDS))
+      end
+    updated =
+      scope.update_all(state: SitemapAutolinkTerm.states[state], updated_at: Time.zone.now)
     bump
     render json: success_json.merge(updated: updated)
   end
@@ -161,55 +220,113 @@ class SitemapAutolinkAdminController < Admin::AdminController
   def collisions
     ruleset = SitemapAutolink::Catalog.ruleset
     winners = ruleset.rules.index_by { |r| r[:phrase] }
+    scope = linkable_terms
+    if params[:q].present?
+      scope =
+        scope.where(
+          "sitemap_autolink_terms.normalized_phrase ILIKE :q",
+          q: "%#{ActiveRecord::Base.sanitize_sql_like(params[:q])}%",
+        )
+    end
     duplicated =
-      SitemapAutolinkTerm
-        .linkable
-        .joins(:entry)
-        .merge(SitemapAutolinkEntry.active)
-        .group(:normalized_phrase)
-        .having("COUNT(DISTINCT entry_id) > 1")
-        .pluck(:normalized_phrase)
+      scope.group(:normalized_phrase).having("COUNT(DISTINCT entry_id) > 1").pluck(
+        :normalized_phrase,
+      ).sort
+    page = current_page
+    shown = duplicated[page * PAGE_SIZE, PAGE_SIZE] || []
     # Candidates are scoped to ACTIVE entries exactly like the collision
     # detection above: a disabled entry is not competing for the phrase,
     # so listing it would invent a conflict that no longer exists. One
-    # query for every candidate, not one per colliding phrase.
+    # query for the page's candidates, not one per colliding phrase.
     candidates_by_phrase =
-      SitemapAutolinkTerm
-        .linkable
-        .joins(:entry)
-        .merge(SitemapAutolinkEntry.active)
-        .where(normalized_phrase: duplicated)
+      linkable_terms
+        .where(normalized_phrase: shown)
         .pluck(
           "sitemap_autolink_terms.normalized_phrase",
           "sitemap_autolink_entries.url",
+          "sitemap_autolink_entries.title",
           "sitemap_autolink_entries.content_type",
         )
         .group_by(&:first)
     render json: {
+             total: duplicated.size,
+             page: page,
+             per_page: PAGE_SIZE,
+             pages: page_count(duplicated.size),
              collisions:
-               duplicated.sort.map do |phrase|
+               shown.map do |phrase|
+                 winner = winners.dig(phrase, :url)
                  {
                    phrase: phrase,
-                   winner: winners.dig(phrase, :url),
+                   winner: winner,
                    candidates:
-                     (candidates_by_phrase[phrase] || []).map do |_p, url, type|
-                       { url: url, type: type }
+                     (candidates_by_phrase[phrase] || []).map do |_p, url, title, type|
+                       { url: url, title: title, type: type, winner: url == winner }
                      end,
                  }
                end,
            }
   end
 
-  def pending
-    terms =
-      SitemapAutolinkTerm
-        .pending_review
-        .includes(:entry)
-        .order(:normalized_phrase)
-        .limit(500)
+  # Phrases that sit inside a longer active phrase. Both are live rules,
+  # but wherever the longer one appears it takes the span — so these are
+  # the keywords that fire less often than their catalog row suggests.
+  # Answering "why did my three-word phrase not link" with a report
+  # beats answering it by reading rendered posts.
+  def overlaps
+    ruleset = SitemapAutolink::Catalog.ruleset
+    matcher = ruleset.matcher
+    covered_by = Hash.new { |shadowed, phrase| shadowed[phrase] = [] }
+    truncated = false
+    pairs = 0
+
+    ruleset.rules.each do |rule|
+      matcher
+        .scan(rule[:phrase])
+        .each do |candidate|
+          inner = candidate[:rule]
+          # Compiled rules are unique per phrase, so an equal phrase is
+          # the rule matching itself.
+          next if inner[:phrase] == rule[:phrase]
+          covered_by[inner[:phrase]] << rule
+          pairs += 1
+        end
+      if pairs >= MAX_OVERLAP_PAIRS
+        truncated = true
+        break
+      end
+    end
+
+    by_phrase = ruleset.rules.index_by { |r| r[:phrase] }
+    phrases = covered_by.keys
+    if params[:q].present?
+      needle = params[:q].to_s.downcase
+      phrases = phrases.select { |phrase| phrase.include?(needle) }
+    end
+    phrases.sort!
+    page = current_page
+    shown = phrases[page * PAGE_SIZE, PAGE_SIZE] || []
+
     render json: {
-             total: SitemapAutolinkTerm.pending_review.count,
-             pending: terms.map { |t| serialize_term(t, entry: t.entry) },
+             total: phrases.size,
+             page: page,
+             per_page: PAGE_SIZE,
+             pages: page_count(phrases.size),
+             truncated: truncated,
+             overlaps:
+               shown.map do |phrase|
+                 rule = by_phrase[phrase]
+                 {
+                   phrase: phrase,
+                   url: rule && rule[:url],
+                   type: rule && rule[:type],
+                   covered_by:
+                     covered_by[phrase]
+                       .uniq { |r| r[:phrase] }
+                       .sort_by { |r| r[:phrase] }
+                       .map { |r| { phrase: r[:phrase], url: r[:url], type: r[:type] } },
+                 }
+               end,
            }
   end
 
@@ -255,6 +372,62 @@ class SitemapAutolinkAdminController < Admin::AdminController
   end
 
   private
+
+  def current_page
+    params[:page].to_i.clamp(0, 10_000)
+  end
+
+  def page_count(total)
+    (total.to_f / PAGE_SIZE).ceil
+  end
+
+  def entry_types
+    SitemapAutolinkEntry.distinct.order(:content_type).pluck(:content_type)
+  end
+
+  def linkable_terms
+    SitemapAutolinkTerm.linkable.joins(:entry).merge(SitemapAutolinkEntry.active)
+  end
+
+  # Everything but the state filter, so one call serves both the listing
+  # and the per-state counts drawn beside it.
+  def term_scope(source)
+    scope = SitemapAutolinkTerm.joins(:entry)
+    if source[:type].present?
+      scope = scope.where(sitemap_autolink_entries: { content_type: source[:type] })
+    end
+    if source[:origin].present? && SitemapAutolinkTerm.origins.key?(source[:origin].to_s)
+      scope = scope.where(origin: source[:origin].to_s)
+    end
+    if source[:q].present?
+      q = "%#{ActiveRecord::Base.sanitize_sql_like(source[:q])}%"
+      scope =
+        scope.where(
+          "sitemap_autolink_terms.phrase ILIKE :q " \
+            "OR sitemap_autolink_terms.normalized_phrase ILIKE :q " \
+            "OR sitemap_autolink_entries.title ILIKE :q " \
+            "OR sitemap_autolink_entries.url ILIKE :q",
+          q: q,
+        )
+    end
+    scope
+  end
+
+  def filtered_bulk_scope
+    filter = params[:filter]
+    scope = term_scope(filter)
+    scope = scope.where(state: validated_state(filter[:state])) if filter[:state].present?
+    scope
+  end
+
+  # One grouped query, defensive about whether the adapter hands back
+  # the enum's name or its stored integer.
+  def state_counts(scope)
+    counted = scope.group(:state).count
+    SitemapAutolinkTerm.states.each_with_object({}) do |(name, value), counts|
+      counts[name] = counted[name] || counted[value] || 0
+    end
+  end
 
   # An unknown enum value assigned to `state` raises ArgumentError deep
   # in ActiveRecord (a 500); reject it as a proper invalid-parameter
@@ -339,6 +512,9 @@ class SitemapAutolinkAdminController < Admin::AdminController
       result[:entry_url] = entry.url
       result[:entry_title] = entry.title
       result[:entry_type] = entry.content_type
+      # A phrase on a disabled or vanished page compiles into no rule at
+      # all; the keyword list says so rather than showing it as active.
+      result[:entry_active] = entry.enabled && !entry.removed_from_source
     end
     result
   end

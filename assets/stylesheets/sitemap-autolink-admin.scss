@@ -1,6 +1,10 @@
-// Admin catalog page. Error details are long single-line strings
-// (URL + exception message); a default <pre> refuses to wrap them and
-// stretches the runs table — and the whole page — horizontally.
+// Admin catalog page.
+//
+// The admin area is a narrow column, and everything this plugin stores
+// is wide: page titles, URLs and any number of phrases per page. Laid
+// out as table columns they fight for room and every row wraps to a
+// different height, so the page list is stacked cards and destinations
+// are shown as linked titles with the URL kept in the tooltip.
 .sitemap-autolink-admin {
   &__errors {
     margin: 0.5em 0 0;
@@ -9,9 +13,217 @@
     overflow-wrap: anywhere;
   }
 
-  // Long URLs and titles in the entries/runs tables get a break point
-  // instead of forcing the layout wide.
   table td {
     overflow-wrap: anywhere;
+    vertical-align: top;
+  }
+
+  &__tabs {
+    margin: 1em 0;
+    border-bottom: 1px solid var(--primary-low);
+  }
+
+  &__tab-count {
+    margin-left: 0.25em;
+    padding: 0 0.4em;
+    border-radius: 1em;
+    background: var(--primary-low);
+    font-size: var(--font-down-2);
+  }
+
+  // The filter row is the primary control of a catalog with thousands
+  // of phrases, so it stays on one line until it genuinely cannot.
+  &__keyword-search,
+  &__search,
+  &__conflict-search {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5em;
+    margin: 1em 0;
+
+    input[type="text"] {
+      margin: 0;
+      min-width: 15em;
+      flex: 1 1 15em;
+    }
+  }
+
+  &__state-filters,
+  &__bulk {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em;
+    margin: 0 0 1em;
+  }
+
+  &__filter-count {
+    margin-left: 0.4em;
+    opacity: 0.7;
+  }
+
+  &__hint {
+    color: var(--primary-medium);
+    max-width: 55em;
+  }
+
+  &__empty {
+    color: var(--primary-medium);
+  }
+
+  // A small, neutral badge: content type, phrase state, "slug", and so
+  // on. Variants only change color, never size, so a row of them stays
+  // one visual weight.
+  &__pill {
+    display: inline-block;
+    margin-left: 0.4em;
+    padding: 0.1em 0.5em;
+    border-radius: 1em;
+    background: var(--primary-low);
+    color: var(--primary-high);
+    font-size: var(--font-down-2);
+    font-weight: normal;
+    white-space: nowrap;
+    vertical-align: middle;
+
+    &.--warning {
+      background: var(--highlight-medium);
+    }
+
+    &.--danger {
+      background: var(--danger-low);
+      color: var(--danger);
+    }
+
+    &.--success {
+      background: var(--success-low);
+      color: var(--success);
+    }
+
+    &.--state-pending_review {
+      background: var(--highlight-medium);
+    }
+
+    &.--state-disabled {
+      background: var(--danger-low);
+      color: var(--danger);
+    }
+  }
+
+  &__phrase {
+    font-weight: bold;
+  }
+
+  &__reason {
+    display: block;
+    color: var(--primary-medium);
+    font-size: var(--font-down-1);
+  }
+
+  &__keyword-table th:last-child,
+  &__keyword-table td:last-child {
+    white-space: nowrap;
+  }
+
+  // One card per ingested page: title (linked, with the URL as its
+  // tooltip) and type on the first line, phrase chips on the next, the
+  // add field last, and the enable/disable toggle in the top corner.
+  &__entry-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75em;
+  }
+
+  &__entry {
+    padding: 0.75em 1em;
+    border: 1px solid var(--primary-low);
+    border-radius: 0.25em;
+
+    &.is-disabled {
+      background: var(--primary-very-low);
+    }
+  }
+
+  &__entry-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1em;
+  }
+
+  &__entry-title {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  &__toggle-entry {
+    flex: 0 0 auto;
+  }
+
+  &__entry-terms {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4em;
+    margin: 0.6em 0;
+  }
+
+  // A phrase and its remove button read as one object, so they share a
+  // chip rather than sitting as loose text next to a loose button.
+  &__term {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15em;
+    padding: 0.1em 0.15em 0.1em 0.6em;
+    border-radius: 1em;
+    background: var(--primary-low);
+
+    &[data-state="disabled"] {
+      opacity: 0.6;
+      text-decoration: line-through;
+    }
+
+    &[data-state="pending_review"] {
+      background: var(--highlight-medium);
+    }
+
+    .btn {
+      padding: 0.15em 0.3em;
+    }
+  }
+
+  &__no-terms {
+    color: var(--primary-medium);
+  }
+
+  &__add-phrase {
+    display: flex;
+    gap: 0.5em;
+
+    input[type="text"] {
+      margin: 0;
+      flex: 1 1 auto;
+      max-width: 24em;
+    }
+  }
+
+  &__collision {
+    margin-bottom: 0.75em;
+  }
+
+  &__candidate,
+  &__covering {
+    padding-left: 1em;
+  }
+
+  &__candidate.is-winner {
+    font-weight: bold;
+  }
+
+  &__pagination {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
   }
 }
