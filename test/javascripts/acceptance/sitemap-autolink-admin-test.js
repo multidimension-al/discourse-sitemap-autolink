@@ -1,4 +1,4 @@
-import { click, fillIn, visit } from "@ember/test-helpers";
+import { click, currentURL, fillIn, visit } from "@ember/test-helpers";
 import { test } from "qunit";
 import { acceptance } from "discourse/tests/helpers/qunit-helpers";
 import { i18n } from "discourse-i18n";
@@ -6,6 +6,10 @@ import { i18n } from "discourse-i18n";
 const PLUGIN_ID = "discourse-sitemap-autolink";
 const BASE = `/admin/plugins/${PLUGIN_ID}`;
 const CATALOG_URL = `${BASE}/catalog`;
+
+function tabUrl(tab) {
+  return `${CATALOG_URL}?tab=${tab}`;
+}
 
 function pluginPayload() {
   return {
@@ -98,6 +102,43 @@ function term(id, phrase, state, overrides = {}) {
   };
 }
 
+function keyword(id, phrase, state, overrides = {}) {
+  return term(id, phrase, state, {
+    entry_url: "https://example.com/shop/widget-kit",
+    entry_title: "Widget Kit",
+    entry_type: "product",
+    entry_active: true,
+    ...overrides,
+  });
+}
+
+function termsPayload() {
+  return {
+    total: 3,
+    page: 0,
+    per_page: 50,
+    pages: 2,
+    types: ["product", "wiki"],
+    state_counts: {
+      auto_active: 1,
+      pending_review: 1,
+      approved: 1,
+      disabled: 0,
+    },
+    terms: [
+      keyword(101, "Widget Kit", "approved"),
+      keyword(201, "Flux", "pending_review", {
+        entry_id: 12,
+        review_reason: "phrase shorter than 5 characters",
+        entry_url: "https://example.com/wiki/flux",
+        entry_title: "Flux",
+        entry_type: "wiki",
+      }),
+      keyword(301, "Deluxe Widget Kit", "auto_active", { origin: "manual" }),
+    ],
+  };
+}
+
 function entriesPayload() {
   return {
     total: 2,
@@ -141,39 +182,57 @@ function entriesPayload() {
   };
 }
 
-function pendingPayload() {
+function collisionsPayload() {
   return {
-    total: 2,
-    pending: [
-      term(201, "Flux", "pending_review", {
-        entry_id: 12,
-        review_reason: "phrase shorter than 5 characters",
-        entry_url: "https://example.com/wiki/flux",
-        entry_title: "Flux",
-        entry_type: "wiki",
-      }),
-      term(202, "Kits", "pending_review", {
-        entry_id: 11,
-        review_reason: "phrase is a single common word",
-        entry_url: "https://example.com/shop/widget-kit",
-        entry_title: "Widget Kit",
-        entry_type: "product",
-      }),
+    total: 1,
+    page: 0,
+    per_page: 50,
+    pages: 1,
+    collisions: [
+      {
+        phrase: "flux",
+        winner: "https://example.com/shop/flux",
+        candidates: [
+          {
+            url: "https://example.com/shop/flux",
+            title: "Flux Capacitor",
+            type: "product",
+            winner: true,
+          },
+          {
+            url: "https://example.com/wiki/flux",
+            title: "Flux",
+            type: "wiki",
+            winner: false,
+          },
+        ],
+      },
     ],
   };
 }
 
-function collisionsPayload() {
-  return [
-    {
-      phrase: "flux",
-      winner: "https://example.com/shop/flux",
-      candidates: [
-        { url: "https://example.com/shop/flux", type: "product" },
-        { url: "https://example.com/wiki/flux", type: "wiki" },
-      ],
-    },
-  ];
+function overlapsPayload() {
+  return {
+    total: 1,
+    page: 0,
+    per_page: 50,
+    pages: 1,
+    truncated: false,
+    overlaps: [
+      {
+        phrase: "widget kit",
+        url: "https://example.com/shop/widget-kit",
+        type: "product",
+        covered_by: [
+          {
+            phrase: "deluxe widget kit",
+            url: "https://example.com/shop/deluxe-widget-kit",
+            type: "product",
+          },
+        ],
+      },
+    ],
+  };
 }
 
 function previewPayload() {
@@ -216,6 +275,7 @@ function record(name, request, helper) {
     name,
     url: request.url,
     queryParams: request.queryParams,
+    raw: request.requestBody,
     body: helper.parsePostData(request.requestBody),
   });
 }
@@ -228,25 +288,46 @@ function resetState() {
   state = {
     status: statusPayload(),
     runs: runsPayload(),
-    pending: pendingPayload(),
+    terms: termsPayload(),
     collisions: collisionsPayload(),
+    overlaps: overlapsPayload(),
     entries: entriesPayload(),
   };
   requests = [];
 }
 
-// The catalog page issues the same five reads on entry and after every
-// refresh, so every module needs them stubbed.
+// Status and history back the page header on every tab; each tab's own
+// data is only fetched when that tab is opened.
 function stubCatalogEndpoints(server, helper, { status } = {}) {
   server.get(`${BASE}.json`, () => helper.response(pluginPayload()));
   server.get(`${BASE}/status`, () =>
     status ? status() : helper.response(state.status)
   );
   server.get(`${BASE}/runs`, () => helper.response({ runs: state.runs }));
-  server.get(`${BASE}/pending`, () => helper.response(state.pending));
-  server.get(`${BASE}/collisions`, () =>
-    helper.response({ collisions: state.collisions })
-  );
+  server.get(`${BASE}/collisions`, () => helper.response(state.collisions));
+  server.get(`${BASE}/overlaps`, () => helper.response(state.overlaps));
+
+  server.get(`${BASE}/terms`, (request) => {
+    record("terms", request, helper);
+    const { q, state: stateFilter } = request.queryParams;
+    let matching = state.terms.terms;
+    if (q) {
+      matching = matching.filter((t) =>
+        `${t.phrase} ${t.entry_title} ${t.entry_url}`
+          .toLowerCase()
+          .includes(q.toLowerCase())
+      );
+    }
+    if (stateFilter) {
+      matching = matching.filter((t) => t.state === stateFilter);
+    }
+    return helper.response({
+      ...state.terms,
+      total: matching.length,
+      terms: matching,
+    });
+  });
+
   server.get(`${BASE}/entries`, (request) => {
     record("entries", request, helper);
     const query = request.queryParams.q;
@@ -297,21 +378,36 @@ acceptance("Sitemap Autolink | Admin catalog", function (needs) {
 
     server.put(`${BASE}/terms/bulk`, (request) => {
       record("bulk", request, helper);
-      state.pending = { total: 0, pending: [] };
+      state.terms = {
+        ...termsPayload(),
+        total: 0,
+        terms: [],
+        state_counts: {
+          auto_active: 0,
+          pending_review: 0,
+          approved: 0,
+          disabled: 0,
+        },
+      };
       state.status = statusPayload({ pending_terms: 0 });
-      return helper.response({ success: "OK", updated: 2 });
+      return helper.response({ success: "OK", updated: 3 });
     });
 
     server.put(`${BASE}/terms/:id`, (request) => {
       record("term", request, helper);
       const id = parseInt(request.params.id, 10);
-      const existing = [...state.pending.pending, ...allEntryTerms()].find(
+      const existing = [...state.terms.terms, ...allEntryTerms()].find(
         (t) => t.id === id
       );
       return helper.response({
         ...existing,
         state: helper.parsePostData(request.requestBody).state,
       });
+    });
+
+    server.delete(`${BASE}/terms/:id`, (request) => {
+      record("delete-term", request, helper);
+      return helper.response({ success: "OK" });
     });
 
     server.post(`${BASE}/terms`, (request) => {
@@ -355,7 +451,7 @@ acceptance("Sitemap Autolink | Admin catalog", function (needs) {
       .exists("the catalog page is rendered");
   });
 
-  test("shows catalog status, history, review queue, entries and collisions", async function (assert) {
+  test("opens on the overview and splits the rest across tabs", async function (assert) {
     await visit(CATALOG_URL);
 
     assert.dom(".sitemap-autolink-admin__status p").hasText(
@@ -372,6 +468,344 @@ acceptance("Sitemap Autolink | Admin catalog", function (needs) {
       .doesNotExist("a healthy catalog raises no warnings");
 
     assert
+      .dom(".sitemap-autolink-admin__tab")
+      .exists({ count: 5 }, "each concern gets its own tab");
+
+    assert
+      .dom(
+        ".sitemap-autolink-admin__tab[data-tab='keywords'] .sitemap-autolink-admin__tab-count"
+      )
+      .hasText("2", "the keywords tab carries the review-queue count");
+
+    assert
+      .dom(".sitemap-autolink-admin__keyword")
+      .doesNotExist("the keyword list is not loaded until its tab is opened");
+
+    assert.notOk(
+      lastRequest("terms"),
+      "no keyword request is made for the overview"
+    );
+  });
+
+  test("a tab is linkable and survives a reload", async function (assert) {
+    await visit(tabUrl("conflicts"));
+
+    assert
+      .dom(".sitemap-autolink-admin__collisions")
+      .exists("a deep-linked tab renders directly");
+
+    await click(".sitemap-autolink-admin__tab[data-tab='logs']");
+
+    assert.strictEqual(
+      currentURL(),
+      tabUrl("logs"),
+      "clicking a tab puts it in the URL"
+    );
+    assert.dom(".sitemap-autolink-admin__runs").exists();
+  });
+
+  test("the keywords tab lists every phrase with its destination", async function (assert) {
+    await visit(tabUrl("keywords"));
+
+    assert
+      .dom(".sitemap-autolink-admin__keyword")
+      .exists({ count: 3 }, "keywords are listed one per row");
+
+    assert
+      .dom(
+        ".sitemap-autolink-admin__keyword[data-term-id='201'] td:first-child"
+      )
+      .includesText(
+        "phrase shorter than 5 characters",
+        "a phrase held back for review says why"
+      );
+
+    assert
+      .dom(
+        ".sitemap-autolink-admin__keyword[data-term-id='201'] td:nth-child(2) a"
+      )
+      .hasText("Flux", "the destination reads as its title, not a raw URL")
+      .hasAttribute(
+        "href",
+        "https://example.com/wiki/flux",
+        "and the title is the link to it"
+      );
+
+    assert
+      .dom(
+        ".sitemap-autolink-admin__state-filter[data-state='pending_review'] .sitemap-autolink-admin__filter-count"
+      )
+      .hasText("1", "the state filters carry their counts");
+  });
+
+  test("keywords can be searched and filtered by state", async function (assert) {
+    await visit(tabUrl("keywords"));
+
+    await fillIn(".sitemap-autolink-admin__keyword-search input", "flux");
+    await click(".sitemap-autolink-admin__keyword-search-btn");
+
+    assert.strictEqual(lastRequest("terms").queryParams.q, "flux");
+    assert
+      .dom(".sitemap-autolink-admin__keyword")
+      .exists({ count: 1 }, "only matching keywords are listed");
+
+    await click(
+      ".sitemap-autolink-admin__state-filter[data-state='pending_review']"
+    );
+
+    const request = lastRequest("terms");
+    assert.strictEqual(request.queryParams.state, "pending_review");
+    assert.strictEqual(
+      request.queryParams.page,
+      "0",
+      "filtering returns to the first page"
+    );
+  });
+
+  test("keywords paginate", async function (assert) {
+    await visit(tabUrl("keywords"));
+
+    assert
+      .dom(".sitemap-autolink-admin__keyword-pagination span")
+      .hasText("1 / 2");
+
+    await click(
+      ".sitemap-autolink-admin__keyword-pagination .sitemap-autolink-admin__next"
+    );
+    assert.strictEqual(lastRequest("terms").queryParams.page, "1");
+    assert
+      .dom(".sitemap-autolink-admin__keyword-pagination span")
+      .hasText("2 / 2");
+  });
+
+  test("a keyword can be approved from its row", async function (assert) {
+    await visit(tabUrl("keywords"));
+    await click(
+      ".sitemap-autolink-admin__keyword[data-term-id='201'] .sitemap-autolink-admin__approve"
+    );
+
+    const request = lastRequest("term");
+    assert.true(
+      request.url.endsWith(`${BASE}/terms/201`),
+      "the reviewed phrase is updated"
+    );
+    assert.strictEqual(request.body.state, "approved");
+    assert
+      .dom(".sitemap-autolink-admin__keyword[data-term-id='201']")
+      .hasAttribute("data-state", "approved", "the row reflects the new state");
+  });
+
+  // 7,500 phrases cannot be reviewed 50 rows at a time, so the bulk
+  // action addresses the filter rather than the page.
+  test("a whole filter can be approved at once", async function (assert) {
+    await visit(tabUrl("keywords"));
+    await click(".sitemap-autolink-admin__approve-all");
+
+    assert
+      .dom(".dialog-body")
+      .hasText(
+        i18n("sitemap_autolink.admin.bulk_approved_confirm", { count: 3 }),
+        "the bulk action names how many phrases it touches"
+      );
+
+    await click(".dialog-footer .btn-primary");
+
+    const request = lastRequest("bulk");
+    assert.strictEqual(request.body.state, "approved");
+    assert.true(
+      decodeURIComponent(request.raw).includes("filter["),
+      "the current filter is submitted, not a list of ids"
+    );
+
+    assert
+      .dom(".sitemap-autolink-admin__keywords .sitemap-autolink-admin__empty")
+      .hasText(
+        i18n("sitemap_autolink.admin.no_keywords"),
+        "the list reloads itself and the queue is empty"
+      );
+  });
+
+  test("a manual alias can be deleted from the keywords tab", async function (assert) {
+    await visit(tabUrl("keywords"));
+
+    assert
+      .dom(
+        ".sitemap-autolink-admin__keyword[data-term-id='101'] .sitemap-autolink-admin__delete"
+      )
+      .doesNotExist("a generated phrase offers disable, not delete");
+
+    await click(
+      ".sitemap-autolink-admin__keyword[data-term-id='301'] .sitemap-autolink-admin__delete"
+    );
+    await click(".dialog-footer .btn-primary");
+
+    assert.true(
+      lastRequest("delete-term").url.endsWith(`${BASE}/terms/301`),
+      "the alias is deleted"
+    );
+    assert
+      .dom(".sitemap-autolink-admin__keyword[data-term-id='301']")
+      .doesNotExist("the row leaves the list");
+  });
+
+  test("the pages tab stacks each page into a card", async function (assert) {
+    await visit(tabUrl("pages"));
+
+    assert
+      .dom(".sitemap-autolink-admin__entry")
+      .exists({ count: 2 }, "the catalog entries are listed");
+
+    const first = ".sitemap-autolink-admin__entry[data-entry-id='11']";
+
+    assert
+      .dom(`${first} .sitemap-autolink-admin__entry-title a`)
+      .hasText("Widget Kit", "the title carries the link, not a wide URL")
+      .hasAttribute("href", "https://example.com/shop/widget-kit");
+
+    assert
+      .dom(
+        `${first} .sitemap-autolink-admin__entry-title .sitemap-autolink-admin__pill`
+      )
+      .hasText("product", "the content type sits beside the title as a pill");
+
+    assert
+      .dom(`${first} .sitemap-autolink-admin__term`)
+      .exists({ count: 2 }, "every phrase is a chip on its own line");
+
+    assert
+      .dom(`${first} .sitemap-autolink-admin__add-phrase`)
+      .exists("the add field closes the card");
+
+    assert
+      .dom(
+        ".sitemap-autolink-admin__entry[data-entry-id='12'] .sitemap-autolink-admin__entry-title"
+      )
+      .includesText(
+        i18n("sitemap_autolink.admin.slug_title"),
+        "an entry titled from its slug is flagged"
+      );
+  });
+
+  test("entries can be searched, filtered and paged", async function (assert) {
+    await visit(tabUrl("pages"));
+
+    await fillIn(
+      ".sitemap-autolink-admin__search input[type='text']",
+      "gasket"
+    );
+    await click(".sitemap-autolink-admin__search-btn");
+
+    assert.strictEqual(lastRequest("entries").queryParams.q, "gasket");
+    assert
+      .dom(".sitemap-autolink-admin__entry")
+      .exists({ count: 1 }, "only matching entries are listed");
+
+    await fillIn(".sitemap-autolink-admin__type-filter", "wiki");
+    assert.strictEqual(
+      lastRequest("entries").queryParams.type,
+      "wiki",
+      "the type filter is sent to the server"
+    );
+
+    await click(".sitemap-autolink-admin__pending-filter input");
+    assert.strictEqual(
+      lastRequest("entries").queryParams.pending,
+      "true",
+      "the review filter is sent to the server"
+    );
+    assert.strictEqual(
+      lastRequest("entries").queryParams.page,
+      "0",
+      "filtering returns to the first page"
+    );
+  });
+
+  test("an entry can be disabled without leaving the page", async function (assert) {
+    await visit(tabUrl("pages"));
+
+    const toggle =
+      ".sitemap-autolink-admin__entry[data-entry-id='11'] .sitemap-autolink-admin__toggle-entry";
+    assert
+      .dom(toggle)
+      .hasText(i18n("sitemap_autolink.admin.disable"), "the entry is active");
+
+    await click(toggle);
+
+    const request = lastRequest("entry");
+    assert.true(request.url.endsWith(`${BASE}/entries/11`));
+    assert.strictEqual(request.body.enabled, "false");
+    assert
+      .dom(toggle)
+      .hasText(
+        i18n("sitemap_autolink.admin.enable"),
+        "the row reflects the new state"
+      );
+  });
+
+  test("a phrase can be disabled and a manual alias added", async function (assert) {
+    await visit(tabUrl("pages"));
+
+    const entry = ".sitemap-autolink-admin__entry[data-entry-id='11']";
+
+    await click(`${entry} .sitemap-autolink-admin__disable-term`);
+
+    const update = lastRequest("term");
+    assert.true(update.url.endsWith(`${BASE}/terms/101`));
+    assert.strictEqual(update.body.state, "disabled");
+    assert
+      .dom(`${entry} .sitemap-autolink-admin__enable-term`)
+      .exists({ count: 2 }, "both phrases can now be re-enabled");
+
+    await fillIn(
+      `${entry} .sitemap-autolink-admin__add-phrase input`,
+      "Deluxe Widget Kit"
+    );
+    await click(`${entry} .sitemap-autolink-admin__add-phrase button`);
+
+    const created = lastRequest("create-term");
+    assert.strictEqual(created.body.entry_id, "11");
+    assert.strictEqual(created.body.phrase, "Deluxe Widget Kit");
+
+    assert
+      .dom(`${entry} .sitemap-autolink-admin__term`)
+      .exists({ count: 3 }, "the alias joins the entry's phrases");
+    assert
+      .dom(`${entry} .sitemap-autolink-admin__add-phrase input`)
+      .hasNoValue("the input is cleared for the next alias");
+  });
+
+  test("the conflicts tab reports duplicates and overlaps", async function (assert) {
+    await visit(tabUrl("conflicts"));
+
+    assert
+      .dom(".sitemap-autolink-admin__collisions h3")
+      .hasText(
+        `${i18n("sitemap_autolink.admin.collisions_title")} (1)`,
+        "duplicate phrases are counted"
+      );
+    assert
+      .dom(".sitemap-autolink-admin__candidate")
+      .exists({ count: 2 }, "both destinations claiming a phrase are shown");
+
+    assert
+      .dom(".sitemap-autolink-admin__candidate.is-winner")
+      .exists({ count: 1 }, "the destination that actually links is marked");
+
+    assert
+      .dom(".sitemap-autolink-admin__overlap")
+      .exists({ count: 1 }, "phrases buried inside longer ones are listed");
+    assert
+      .dom(".sitemap-autolink-admin__covering")
+      .includesText(
+        "deluxe widget kit",
+        "the longer phrase that wins the span is named"
+      );
+  });
+
+  test("the logs tab shows the synchronization history", async function (assert) {
+    await visit(tabUrl("logs"));
+
+    assert
       .dom(".sitemap-autolink-admin__runs tbody tr:first-child td:nth-child(3)")
       .hasText(i18n("sitemap_autolink.admin.run_ok"), "the last run succeeded");
 
@@ -381,47 +815,6 @@ acceptance("Sitemap Autolink | Admin catalog", function (needs) {
         "failed to fetch sitemap https://example.com/sitemap.xml",
         "a failed run can be expanded for its errors"
       );
-
-    assert
-      .dom(".sitemap-autolink-admin__pending-row")
-      .exists({ count: 2 }, "both pending phrases are listed for review");
-
-    assert
-      .dom(
-        ".sitemap-autolink-admin__pending-row[data-term-id='201'] td:nth-child(2)"
-      )
-      .hasText(
-        "phrase shorter than 5 characters",
-        "each pending phrase explains why it needs review"
-      );
-
-    assert
-      .dom(".sitemap-autolink-admin__entry")
-      .exists({ count: 2 }, "the catalog entries are listed");
-
-    assert
-      .dom(".sitemap-autolink-admin__entry[data-entry-id='12'] td:first-child")
-      .includesText(
-        i18n("sitemap_autolink.admin.slug_title"),
-        "an entry titled from its slug is flagged"
-      );
-
-    assert
-      .dom(
-        ".sitemap-autolink-admin__entry[data-entry-id='11'] .sitemap-autolink-admin__term"
-      )
-      .exists({ count: 2 }, "an entry lists all of its phrases");
-
-    assert
-      .dom(".sitemap-autolink-admin__collisions summary")
-      .hasText(
-        `${i18n("sitemap_autolink.admin.collisions_title")} (1)`,
-        "collisions are counted"
-      );
-
-    assert
-      .dom(".sitemap-autolink-admin__candidate")
-      .exists({ count: 2 }, "both destinations claiming a phrase are shown");
   });
 
   test("Sync now enqueues a run, then offers to cancel it", async function (assert) {
@@ -500,164 +893,6 @@ acceptance("Sitemap Autolink | Admin catalog", function (needs) {
       .dom(".sitemap-autolink-admin__notice")
       .hasText(i18n("sitemap_autolink.admin.rebake_all_started"));
   });
-
-  test("approving a pending phrase removes it from the queue", async function (assert) {
-    await visit(CATALOG_URL);
-    await click(
-      ".sitemap-autolink-admin__pending-row[data-term-id='201'] .sitemap-autolink-admin__approve"
-    );
-
-    const request = lastRequest("term");
-    assert.true(
-      request.url.endsWith(`${BASE}/terms/201`),
-      "the reviewed phrase is updated"
-    );
-    assert.strictEqual(request.body.state, "approved");
-
-    assert
-      .dom(".sitemap-autolink-admin__pending-row")
-      .exists({ count: 1 }, "the approved phrase leaves the queue");
-    assert
-      .dom(".sitemap-autolink-admin__pending h3")
-      .hasText(
-        `${i18n("sitemap_autolink.admin.pending_title")} (1)`,
-        "the queue count drops"
-      );
-  });
-
-  test("the review queue can be cleared in bulk", async function (assert) {
-    await visit(CATALOG_URL);
-    await click(".sitemap-autolink-admin__approve-all");
-
-    assert
-      .dom(".dialog-body")
-      .hasText(
-        i18n("sitemap_autolink.admin.bulk_approved_confirm", { count: 2 }),
-        "the bulk action names how many phrases it touches"
-      );
-
-    await click(".dialog-footer .btn-primary");
-
-    const request = lastRequest("bulk");
-    assert.deepEqual(
-      request.body["ids[]"],
-      ["201", "202"],
-      "every listed phrase is submitted"
-    );
-    assert.strictEqual(request.body.state, "approved");
-
-    assert
-      .dom(".sitemap-autolink-admin__pending p")
-      .hasText(
-        i18n("sitemap_autolink.admin.no_pending"),
-        "the page reloads itself and the queue is empty"
-      );
-  });
-
-  test("entries can be searched and filtered", async function (assert) {
-    await visit(CATALOG_URL);
-
-    await fillIn(
-      ".sitemap-autolink-admin__search input[type='text']",
-      "gasket"
-    );
-    await click(".sitemap-autolink-admin__search-btn");
-
-    assert.strictEqual(lastRequest("entries").queryParams.q, "gasket");
-    assert
-      .dom(".sitemap-autolink-admin__entry")
-      .exists({ count: 1 }, "only matching entries are listed");
-
-    await fillIn(".sitemap-autolink-admin__type-filter", "wiki");
-    assert.strictEqual(
-      lastRequest("entries").queryParams.type,
-      "wiki",
-      "the type filter is sent to the server"
-    );
-
-    await click(".sitemap-autolink-admin__pending-filter input");
-    assert.strictEqual(
-      lastRequest("entries").queryParams.pending,
-      "true",
-      "the review filter is sent to the server"
-    );
-    assert.strictEqual(
-      lastRequest("entries").queryParams.page,
-      "0",
-      "filtering returns to the first page"
-    );
-  });
-
-  test("entries paginate", async function (assert) {
-    await visit(CATALOG_URL);
-
-    assert.dom(".sitemap-autolink-admin__pagination span").hasText("1 / 2");
-
-    await click(".sitemap-autolink-admin__next");
-    assert.strictEqual(lastRequest("entries").queryParams.page, "1");
-    assert.dom(".sitemap-autolink-admin__pagination span").hasText("2 / 2");
-
-    await click(".sitemap-autolink-admin__prev");
-    assert.strictEqual(lastRequest("entries").queryParams.page, "0");
-    assert.dom(".sitemap-autolink-admin__pagination span").hasText("1 / 2");
-  });
-
-  test("an entry can be disabled without leaving the page", async function (assert) {
-    await visit(CATALOG_URL);
-
-    const toggle =
-      ".sitemap-autolink-admin__entry[data-entry-id='11'] .sitemap-autolink-admin__toggle-entry";
-    assert
-      .dom(toggle)
-      .hasText(i18n("sitemap_autolink.admin.disable"), "the entry is active");
-
-    await click(toggle);
-
-    const request = lastRequest("entry");
-    assert.true(request.url.endsWith(`${BASE}/entries/11`));
-    assert.strictEqual(request.body.enabled, "false");
-    assert
-      .dom(toggle)
-      .hasText(
-        i18n("sitemap_autolink.admin.enable"),
-        "the row reflects the new state"
-      );
-  });
-
-  test("a phrase can be disabled and a manual alias added", async function (assert) {
-    await visit(CATALOG_URL);
-
-    const entry = ".sitemap-autolink-admin__entry[data-entry-id='11']";
-
-    await click(`${entry} .sitemap-autolink-admin__disable-term`);
-
-    const update = lastRequest("term");
-    assert.true(update.url.endsWith(`${BASE}/terms/101`));
-    assert.strictEqual(update.body.state, "disabled");
-    assert
-      .dom(`${entry} .sitemap-autolink-admin__enable-term`)
-      .exists({ count: 2 }, "both phrases can now be re-enabled");
-
-    await fillIn(
-      `${entry} .sitemap-autolink-admin__add-phrase input`,
-      "Deluxe Widget Kit"
-    );
-    await click(`${entry} .sitemap-autolink-admin__add-phrase button`);
-
-    const created = lastRequest("create-term");
-    assert.strictEqual(created.body.entry_id, "11");
-    assert.strictEqual(created.body.phrase, "Deluxe Widget Kit");
-
-    assert
-      .dom(`${entry} .sitemap-autolink-admin__term`)
-      .exists({ count: 3 }, "the alias joins the entry's phrases");
-    assert
-      .dom(`${entry} .sitemap-autolink-admin__term:last-of-type`)
-      .includesText("Deluxe Widget Kit");
-    assert
-      .dom(`${entry} .sitemap-autolink-admin__add-phrase input`)
-      .hasNoValue("the input is cleared for the next alias");
-  });
 });
 
 acceptance(
@@ -723,6 +958,8 @@ acceptance(
         .dom(".sitemap-autolink-admin__status .sitemap-autolink-admin__warning")
         .hasText(i18n("sitemap_autolink.admin.load_failed"));
 
+      await click(".sitemap-autolink-admin__tab[data-tab='pages']");
+
       assert
         .dom(".sitemap-autolink-admin__entry")
         .exists({ count: 2 }, "the rest of the page still loads");
@@ -742,8 +979,8 @@ acceptance(
     // its endpoints — the exact state a first-time admin lands in.
     needs.pretender((server, helper) => {
       server.get(`${BASE}.json`, () => helper.response(pluginPayload()));
-      ["status", "runs", "pending", "collisions", "entries"].forEach((path) =>
-        server.get(`${BASE}/${path}`, () => helper.response(404, {}))
+      ["status", "runs", "terms", "collisions", "overlaps", "entries"].forEach(
+        (path) => server.get(`${BASE}/${path}`, () => helper.response(404, {}))
       );
     });
 

@@ -45,11 +45,16 @@ sitemaps ──▶ daily sync job ──▶ catalog (entries + phrases) ──�
    always outrank generated phrases.
 3. **Linking.** During Discourse's normal post cooking
    (`on(:post_process_cooked)`), one Aho–Corasick scan over the post
-   finds every active phrase. The first mention of each destination
-   becomes a link (limits configurable). Quoted material, code blocks,
-   existing links, and excluded categories are skipped. Collisions
-   (one phrase, several destinations) resolve deterministically by
-   your configured type priority, then longest phrase wins.
+   finds every active phrase. The **most specific** mention of each
+   destination becomes a link (limits configurable): where phrases
+   overlap the longest one wins, and a page's per-post link budget is
+   spent on its fullest mention rather than on whichever stray word
+   for it happened to appear first. Equal-length matches fall back to
+   document order, so repeated mentions of one phrase link the first.
+   Quoted material, code blocks, existing links, and excluded
+   categories are skipped. Collisions (one phrase, several
+   destinations) resolve deterministically by your configured type
+   priority.
 
 Performance, measured with a 5,000+ phrase catalog
 (`ruby script/benchmark_matcher.rb`): automaton build ~120 ms (cached
@@ -244,37 +249,56 @@ is off) — it does nothing until you enable it, so installing is safe.
 
 ## The admin page
 
-**Admin → Plugins → Sitemap Autolink → Catalog** is the single surface
-for everything the plugin does:
+**Admin → Plugins → Sitemap Autolink → Catalog** is the surface for
+everything the plugin does. A few thousand sitemap URLs produce tens of
+thousands of phrases, so each concern gets its own tab — and each tab
+loads only its own data, paged and searched on the server. The tab is
+in the URL (`?tab=keywords`), so a view is linkable and survives a
+reload.
 
-- **Status** — active rule count, entry count, phrases awaiting
-  review, and configuration warnings (e.g. entries whose type isn't
-  currently allowed to link).
+The page header carries the actions on every tab:
+
+- **Sync now / Cancel run** — trigger a sync; a running sync can be
+  cancelled and keeps the work completed so far.
 - **Preview (dry run)** — what the next sync would do, without writing.
   It applies the same admission rules a real sync does, and is bounded
   to 60 seconds so a slow site can't hold the request open.
-- **Sync now / Cancel run** — trigger a sync; a running sync can be
-  cancelled and keeps the work completed so far.
 - **Rebake matching posts** — one click to catch existing posts up
   after an import: rebakes every post that may contain any active
   phrase, as one self-continuing background job in throttled batches
   (`sitemap_autolink_max_rebakes_per_job_run` per minute). Post
   content is never modified — only the rendered HTML refreshes.
-- **Synchronization history** — every run with its trigger, URL
-  counts, added/retitled/removed counts, result (OK, Partial,
-  Running, Interrupted, Failed), timing/telemetry notes, and errors.
-- **Catalog entries** — searchable, filterable list of every ingested
-  page with its phrases; enable/disable entries and individual
-  phrases inline, add aliases per entry.
-- **Pending review** — approve or disable each gated phrase, singly or
-  in bulk.
-- **Collisions** — every phrase that points at more than one
-  destination, and which one wins.
+
+The tabs:
+
+- **Overview** — active rule count, entry count, phrases awaiting
+  review, configuration warnings (e.g. entries whose type isn't
+  currently allowed to link), and the result of the last dry run.
+- **Keywords** — one row per phrase with the page it links to.
+  Searches phrase text, destination title and URL; filters by state
+  (with a count per state) and content type; approve, disable or
+  delete a phrase inline. **Bulk actions address the whole current
+  filter**, not just the rows on screen — a review queue of thousands
+  is cleared in one confirmed click, and the confirmation names the
+  exact count first. The review queue is this tab filtered to
+  *Awaiting review*, and the tab badge carries its size.
+- **Pages** — one card per ingested URL: linked title and type, its
+  phrases as chips you can remove or restore, a field to add an alias,
+  and the enable/disable toggle in the corner.
+- **Conflicts** — two reports. *Duplicate phrases*: one phrase claimed
+  by several pages, with the destination that actually wins marked.
+  *Overlapping phrases*: phrases that sit inside a longer phrase, which
+  therefore link less often than their catalog row suggests — the
+  answer to "why didn't my three-word keyword fire".
+- **Logs** — every sync run with its trigger, URL counts,
+  added/retitled/removed counts, result (OK, Partial, Running,
+  Interrupted, Failed), timing/telemetry notes, and errors.
 
 A JSON management API (staff-only) backs all of it under
 `/admin/plugins/discourse-sitemap-autolink/` — `status`, `entries`,
-`terms`, `pending`, `collisions`, `runs`, `sync`, `rebake` — if you
-prefer to script against it.
+`terms`, `collisions`, `overlaps`, `runs`, `sync`, `rebake` — if you
+prefer to script against it. Every list endpoint takes `page` and `q`;
+the review queue is `terms?state=pending_review`.
 
 Console tooling mirrors the page: `rake sitemap_autolink:report`,
 `rake sitemap_autolink:preview[20]`, `rake sitemap_autolink:sync`.
@@ -286,7 +310,7 @@ Console tooling mirrors the page: `rake sitemap_autolink:report`,
 | Setting | Default | Purpose |
 | --- | --- | --- |
 | `sitemap_autolink_enabled` | off | Master switch. |
-| `sitemap_autolink_max_links_per_destination_per_post` | 1 | Times each destination may be linked per post (first mentions win). 0 = unlimited. |
+| `sitemap_autolink_max_links_per_destination_per_post` | 1 | Times each destination may be linked per post (its most specific mention wins). 0 = unlimited. |
 | `sitemap_autolink_max_links_per_post` | 0 | Total automatic links per post. 0 = unlimited. |
 | `sitemap_autolink_skip_quotes` | on | Never link inside quoted material. |
 | `sitemap_autolink_include_private_messages` | off | Also link in personal messages. |
@@ -430,11 +454,13 @@ fetched. A page is fetched when it's new, its `lastmod` changed, or a
 previously failed title is due for its backed-off retry.
 
 **Why isn't a phrase linking?** Check, in order: is it in the
-pending-review queue (approve it); is its content type allowed by
-`sitemap_autolink_enabled_types`; is the post in an excluded category;
-was the phrase already used up by the per-post limits; does a
-higher-priority entry own the phrase (collision report). The admin
-status box calls out the common misconfigurations.
+pending-review queue (approve it on the Keywords tab); is its content
+type allowed by `sitemap_autolink_enabled_types`; is the post in an
+excluded category; was the phrase already used up by the per-post
+limits; does a higher-priority entry own the phrase (Conflicts →
+duplicate phrases); does a longer phrase contain it, and did that
+longer phrase appear too (Conflicts → overlapping phrases). The
+Overview tab calls out the common misconfigurations.
 
 **How do I undo everything?** Turn off `sitemap_autolink_enabled` and
 rebake (`rake posts:rebake`, or let posts rebake naturally). Removing
