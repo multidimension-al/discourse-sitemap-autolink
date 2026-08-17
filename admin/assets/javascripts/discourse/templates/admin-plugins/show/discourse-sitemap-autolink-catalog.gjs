@@ -16,24 +16,29 @@ export default <template>
           @label="sitemap_autolink.admin.sync_now"
           @isLoading={{@controller.syncing}}
           @action={{@controller.syncNow}}
+          class="sitemap-autolink-admin__sync"
         />
         <actions.Default
           @label="sitemap_autolink.admin.run_preview"
           @isLoading={{@controller.previewLoading}}
           @action={{@controller.runPreview}}
+          class="sitemap-autolink-admin__preview-btn"
         />
         <actions.Default
           @label="sitemap_autolink.admin.rebake_all"
           @action={{@controller.rebakeAll}}
+          class="sitemap-autolink-admin__rebake"
         />
         <actions.Default
           @label="sitemap_autolink.admin.refresh"
           @action={{@controller.refreshAll}}
+          class="sitemap-autolink-admin__refresh"
         />
         {{#if @controller.syncRunning}}
           <actions.Default
             @label="sitemap_autolink.admin.cancel_run"
             @action={{@controller.cancelSync}}
+            class="sitemap-autolink-admin__cancel"
           />
         {{/if}}
       </:actions>
@@ -198,12 +203,12 @@ export default <template>
           <DButton
             @label="sitemap_autolink.admin.approve_all"
             @action={{fn @controller.bulkPending "approved"}}
-            class="btn-small"
+            class="btn-small sitemap-autolink-admin__approve-all"
           />
           <DButton
             @label="sitemap_autolink.admin.disable_all"
             @action={{fn @controller.bulkPending "disabled"}}
-            class="btn-small btn-danger"
+            class="btn-small btn-danger sitemap-autolink-admin__disable-all"
           />
         </p>
         <table>
@@ -217,7 +222,10 @@ export default <template>
           </thead>
           <tbody>
             {{#each @controller.pendingTerms as |term|}}
-              <tr>
+              <tr
+                class="sitemap-autolink-admin__pending-row"
+                data-term-id={{term.id}}
+              >
                 <td>"{{term.phrase}}"</td>
                 <td>{{term.review_reason}}</td>
                 <td>
@@ -231,12 +239,12 @@ export default <template>
                   <DButton
                     @label="sitemap_autolink.admin.approve"
                     @action={{fn @controller.setTermState term "approved"}}
-                    class="btn-small"
+                    class="btn-small sitemap-autolink-admin__approve"
                   />
                   <DButton
                     @label="sitemap_autolink.admin.disable"
                     @action={{fn @controller.setTermState term "disabled"}}
-                    class="btn-small btn-danger"
+                    class="btn-small btn-danger sitemap-autolink-admin__disable"
                   />
                 </td>
               </tr>
@@ -266,9 +274,12 @@ export default <template>
         <DButton
           @label="sitemap_autolink.admin.search"
           @action={{@controller.search}}
-          class="btn-small"
+          class="btn-small sitemap-autolink-admin__search-btn"
         />
-        <select {{on "change" @controller.setTypeFilter}}>
+        <select
+          class="sitemap-autolink-admin__type-filter"
+          {{on "change" @controller.setTypeFilter}}
+        >
           <option value="">{{i18n "sitemap_autolink.admin.all_types"}}</option>
           {{#each @controller.entryTypes as |type|}}
             <option value={{type}} selected={{eq type @controller.typeFilter}}>
@@ -298,7 +309,10 @@ export default <template>
           </thead>
           <tbody>
             {{#each @controller.entriesData.entries as |entry|}}
-              <tr>
+              <tr
+                class="sitemap-autolink-admin__entry"
+                data-entry-id={{entry.id}}
+              >
                 <td>
                   {{entry.title}}
                   {{#if (eq entry.title_source "slug")}}
@@ -328,7 +342,7 @@ export default <template>
                             term
                             "approved"
                           }}
-                          class="btn-flat btn-small"
+                          class="btn-flat btn-small sitemap-autolink-admin__enable-term"
                         />
                       {{else}}
                         <DButton
@@ -340,7 +354,7 @@ export default <template>
                             term
                             "disabled"
                           }}
-                          class="btn-flat btn-small"
+                          class="btn-flat btn-small sitemap-autolink-admin__disable-term"
                         />
                       {{/if}}
                     </div>
@@ -368,7 +382,7 @@ export default <template>
                       "sitemap_autolink.admin.enable"
                     }}
                     @action={{fn @controller.toggleEntry entry}}
-                    class="btn-small"
+                    class="btn-small sitemap-autolink-admin__toggle-entry"
                   />
                 </td>
               </tr>
@@ -380,14 +394,14 @@ export default <template>
             @label="sitemap_autolink.admin.prev"
             @action={{@controller.prevPage}}
             @disabled={{unless @controller.hasPrevPage true}}
-            class="btn-small"
+            class="btn-small sitemap-autolink-admin__prev"
           />
           <span>{{@controller.pageDisplay}}</span>
           <DButton
             @label="sitemap_autolink.admin.next"
             @action={{@controller.nextPage}}
             @disabled={{unless @controller.hasNextPage true}}
-            class="btn-small"
+            class="btn-small sitemap-autolink-admin__next"
           />
         </p>
       {{else}}
