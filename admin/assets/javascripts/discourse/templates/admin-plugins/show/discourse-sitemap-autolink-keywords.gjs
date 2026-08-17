@@ -114,7 +114,7 @@ const StateFilter = <template>
       <span class="sitemap-autolink-admin__result-count">
         {{i18n
           "sitemap_autolink.admin.result_summary"
-          pages=@controller.data.total
+          pages=@controller.matchingPages
           phrases=@controller.selectedPhrases
         }}
       </span>

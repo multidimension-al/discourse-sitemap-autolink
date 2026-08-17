@@ -129,6 +129,10 @@ acceptance("Sitemap Autolink | click analytics", function (needs) {
 
   test("ignores links the plugin did not create", async function (assert) {
     await visit(`/t/-/${TOPIC_ID}`);
+    // The claim under test is about the click, not about rendering the
+    // page, and QUnit does not guarantee the order tests run in — so
+    // start from empty rather than from whatever got here first.
+    window.dataLayer.length = 0;
     await click("a.plain-link");
 
     assert.strictEqual(

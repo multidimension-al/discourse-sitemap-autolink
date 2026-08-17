@@ -41,6 +41,12 @@ export default class AdminPluginsShowSitemapAutolinkKeywordsController extends C
     return Object.values(this.stateCounts).reduce((sum, n) => sum + n, 0);
   }
 
+  // Always a number: the summary line renders before the first load
+  // finishes, and i18n raises on an undefined interpolation value.
+  get matchingPages() {
+    return this.data?.total || 0;
+  }
+
   get selectedPhrases() {
     return this.stateFilter
       ? this.stateCounts[this.stateFilter] || 0

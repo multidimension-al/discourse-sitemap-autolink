@@ -408,6 +408,47 @@ class SitemapAutolinkAdminController < Admin::AdminController
            }
   end
 
+  def sync
+    if Discourse.redis.get(SitemapAutolink::SitemapSync::RUNNING_LOCK_KEY).present?
+      return(
+        render json:
+                 failed_json.merge(
+                   error: "A synchronization is already running — cancel it or wait for it to finish.",
+                 ),
+               status: 409
+      )
+    end
+    # A deliberate Sync now lifts any lingering admin cancel.
+    SitemapAutolink::SitemapSync.clear_cancel!
+    Jobs.enqueue(:sitemap_autolink_sync, triggered_by: "manual")
+    render json: success_json
+  end
+
+  def cancel_sync
+    SitemapAutolink::SitemapSync.request_cancel!
+    render json: success_json
+  end
+
+  def rebuild
+    bump
+    render json: success_json.merge(catalog_version: SitemapAutolink::Catalog.version)
+  end
+
+  def rebake
+    if params[:all] == "true"
+      # Candidate-filtered catch-up wave: every post that may contain
+      # any active phrase, in throttled batches. An unconditional
+      # full-forum rebake stays with Discourse's rake posts:rebake.
+      Jobs.enqueue(:sitemap_autolink_rebake_posts, all_phrases: true)
+      render json: success_json
+    elsif params[:phrase].present?
+      Jobs.enqueue(:sitemap_autolink_rebake_posts, phrases: [params[:phrase]])
+      render json: success_json
+    else
+      render json: failed_json, status: :unprocessable_content
+    end
+  end
+
   private
 
   def current_page

@@ -490,7 +490,7 @@ RSpec.describe SitemapAutolink::SitemapSync do
     }
     build_sync(responses).run!
 
-    report = build_sync("#{base}/sitemap-products.xml" => nil).run!
+    report = build_sync({ "#{base}/sitemap-products.xml" => nil }).run!
     expect(report[:errors]).not_to be_empty
     expect(SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget").removed_from_source).to be(false)
   end
@@ -503,7 +503,7 @@ RSpec.describe SitemapAutolink::SitemapSync do
     build_sync(responses).run!
 
     truncated = "<?xml version=\"1.0\"?><urlset><url><loc>#{base}/shop/other</loc></url>"
-    report = build_sync("#{base}/sitemap-products.xml" => truncated).run!
+    report = build_sync({ "#{base}/sitemap-products.xml" => truncated }).run!
     expect(report[:errors].join).to include("incomplete")
     expect(report[:seen]).to eq(0)
     expect(SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget").removed_from_source).to be(false)
