@@ -63,6 +63,44 @@ RSpec.describe SitemapAutolink::SitemapSync do
     expect(report[:added]).to eq(["#{base}/shop/widget-frame-kit"])
   end
 
+  it "treats a sitemap index above the child cap as partial and keeps removal detection off" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha"),
+    }
+    build_sync(responses).run!
+
+    max = described_class::MAX_INDEX_CHILDREN
+    children = (1..(max + 5)).map { |i| "#{base}/sitemap-#{i}.xml" }
+    index_responses = {
+      "#{base}/sitemap-products.xml" =>
+        "<?xml version=\"1.0\"?><sitemapindex>" +
+          children.map { |c| "<sitemap><loc>#{c}</loc></sitemap>" }.join + "</sitemapindex>",
+    }
+    children.each { |c| index_responses[c] = sitemap_xml([]) }
+
+    report = build_sync(index_responses).run!
+    expect(report[:partial]).to be(true)
+    expect(report[:notes].join).to include("only the first #{max}")
+    expect(report[:removed]).to be_empty
+    expect(SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget").removed_from_source).to be(false)
+  end
+
+  it "never ingests sitemap locs that are not http(s) URLs" do
+    responses = {
+      "#{base}/sitemap-products.xml" =>
+        "<?xml version=\"1.0\"?><urlset>" \
+          "<url><loc>javascript:alert(1)</loc></url>" \
+          "<url><loc>#{base}/shop/widget</loc></url>" \
+          "</urlset>",
+      "#{base}/shop/widget" => page_html("Widget Alpha Kit"),
+    }
+    report = build_sync(responses).run!
+    expect(report[:seen]).to eq(1)
+    expect(report[:excluded]).to eq(1)
+    expect(SitemapAutolinkEntry.pluck(:url)).to eq(["#{base}/shop/widget"])
+  end
+
   it "composes suffix fragments split by the | list separator" do
     responses = {
       "#{base}/sitemap-products.xml" => sitemap_xml([["/wiki/widget-history", nil]]),
@@ -293,6 +331,17 @@ RSpec.describe SitemapAutolink::SitemapSync do
     page = source[:sampled].first
     expect(page[:title]).to eq("Widget Frame Kit")
     expect(page[:phrases].map { |p| p[:phrase] }).to include("Widget Frame Kit")
+  end
+
+  it "keeps apostrophes inside og:title attribute values intact" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/foremans-toolkit", nil]]),
+      "#{base}/shop/foremans-toolkit" => page_html("Foreman's Deluxe Toolkit"),
+    }
+    build_sync(responses).run!
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/shop/foremans-toolkit")
+    expect(entry.title).to eq("Foreman's Deluxe Toolkit")
+    expect(entry.title_source).to eq("page")
   end
 
   it "unescapes backslash-escaped quotes leaking from the source CMS" do

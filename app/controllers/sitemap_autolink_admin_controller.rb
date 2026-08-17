@@ -92,8 +92,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
   # Bulk state change for terms, e.g. clearing a large review queue.
   def bulk_terms
     ids = Array(params[:ids]).map(&:to_i).first(500)
-    state = params.require(:state)
-    raise Discourse::InvalidParameters.new(:state) if !SitemapAutolinkTerm.states.key?(state)
+    state = validated_state(params.require(:state))
     updated = SitemapAutolinkTerm.where(id: ids).update_all(state: SitemapAutolinkTerm.states[state], updated_at: Time.zone.now)
     bump
     render json: success_json.merge(updated: updated)
@@ -118,7 +117,12 @@ class SitemapAutolinkAdminController < Admin::AdminController
   def update_entry
     entry = SitemapAutolinkEntry.find(params[:id])
     changes = {}
-    changes[:enabled] = params[:enabled] == "true" if params.key?(:enabled)
+    if params.key?(:enabled)
+      # Accept boolean true/false from JSON clients as well as the
+      # "true"/"false" strings the admin UI sends — a bare `== "true"`
+      # would silently DISABLE an entry for a JSON `enabled: true`.
+      changes[:enabled] = ActiveModel::Type::Boolean.new.cast(params[:enabled]) || false
+    end
     changes[:priority] = params[:priority].presence&.to_i if params.key?(:priority)
     changes[:url] = SitemapAutolinkEntry.normalize_url(params[:url]) if params[:url].present?
     changes[:title] = params[:title] if params[:title].present?
@@ -133,7 +137,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
       entry.terms.create!(
         phrase: params.require(:phrase),
         origin: :manual,
-        state: params[:state].presence || :approved,
+        state: validated_state(params[:state].presence || "approved"),
       )
     bump
     render json: serialize_term(term)
@@ -141,7 +145,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
 
   def update_term
     term = SitemapAutolinkTerm.find(params[:id])
-    term.update!(state: params.require(:state))
+    term.update!(state: validated_state(params.require(:state)))
     bump
     render json: serialize_term(term)
   end
@@ -241,6 +245,15 @@ class SitemapAutolinkAdminController < Admin::AdminController
   end
 
   private
+
+  # An unknown enum value assigned to `state` raises ArgumentError deep
+  # in ActiveRecord (a 500); reject it as a proper invalid-parameter
+  # response instead.
+  def validated_state(state)
+    state = state.to_s
+    raise Discourse::InvalidParameters.new(:state) if !SitemapAutolinkTerm.states.key?(state)
+    state
+  end
 
   def bump
     SitemapAutolink::Catalog.bump_version!

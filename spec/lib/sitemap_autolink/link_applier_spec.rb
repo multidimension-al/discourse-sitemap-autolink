@@ -85,4 +85,24 @@ RSpec.describe SitemapAutolink::LinkApplier do
     expect(count).to eq(1)
     expect(html.scan("sitemap-autolink-product").size).to eq(1)
   end
+
+  it "drops rules with unsafe URL schemes at compile time" do
+    unsafe =
+      SitemapAutolink::Ruleset.compile(
+        [
+          { phrase: "widget kit", url: "javascript:alert(1)", type: "product", priority: 1 },
+          { phrase: "gasket set", url: "data:text/html,x", type: "wiki", priority: 1 },
+          { phrase: "protocol trick", url: "//evil.example/x", type: "wiki", priority: 1 },
+          { phrase: "site faq", url: "/faq", type: "manual", priority: 0 },
+        ],
+      )
+    doc = Nokogiri::HTML5.fragment("<p>widget kit, gasket set, protocol trick and the site faq</p>")
+    count = described_class.apply!(doc, unsafe, options)
+    html = doc.to_html
+    expect(count).to eq(1)
+    expect(html).not_to include("javascript:")
+    expect(html).not_to include("data:")
+    expect(html).not_to include("evil.example")
+    expect(html).to include('href="/faq"')
+  end
 end

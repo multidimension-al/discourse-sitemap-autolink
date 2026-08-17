@@ -337,6 +337,12 @@ The sync is built to be a polite, bounded, observable crawler:
   `lastmod`. Title fetches stream the response and stop as soon as
   `</title>` arrives (hard cap 512 KB), so a fetch reads a few KB of
   most pages.
+- **Strict about inputs.** Only absolute `http(s)` URLs are ingested —
+  anything else in a `<loc>` is malformed (or malicious) and is
+  counted as excluded. A sitemap index expands to at most 100 child
+  sitemaps per source; a larger index is processed to the cap and the
+  run records itself as **Partial**, so the unprocessed tail is never
+  mistaken for deleted pages.
 - **Politeness delay** between page fetches
   (`sitemap_autolink_page_fetch_delay_ms`), and a hard **30-second cap
   per fetch** (shared across redirects, max 3), with no hidden HTTP
