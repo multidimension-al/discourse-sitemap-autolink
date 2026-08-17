@@ -68,7 +68,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
   def preview
     if SiteSetting.sitemap_autolink_sources.blank?
       render json: failed_json.merge(error: "configure sitemap_autolink_sources first"),
-             status: 422
+             status: :unprocessable_content
       return
     end
     limit = (params[:limit] || 10).to_i.clamp(1, 50)

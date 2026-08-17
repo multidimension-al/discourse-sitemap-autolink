@@ -478,8 +478,9 @@ RSpec.describe SitemapAutolink::SitemapSync do
         page_fetch_delay_ms: 50,
         http_get: ->(url, _max) { responses[url] },
       )
-    expect(sync).to receive(:sleep).with(0.05).twice
+    allow(sync).to receive(:sleep)
     sync.run!
+    expect(sync).to have_received(:sleep).with(0.05).twice
   end
 
   it "does not mark entries removed when a sitemap fetch errored" do

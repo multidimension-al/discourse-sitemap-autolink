@@ -1,15 +1,13 @@
 # frozen_string_literal: true
 
-require "set"
-
 module SitemapAutolink
   # Aho-Corasick multi-pattern matcher plus the deterministic match policy.
   #
   # Dependency-free on purpose: it can be exercised and benchmarked with
   # plain Ruby, outside a Discourse boot. One automaton scan finds every
   # candidate occurrence of every rule phrase in O(text length); the
-  # policy layer then resolves overlaps (leftmost, then longest, then
-  # priority) and applies the per-post frequency limits.
+  # policy layer then resolves overlaps (longest, then priority, then
+  # document order) and applies the per-post frequency limits.
   #
   # Rules are plain hashes:
   #   { phrase: "widget frame kit",     # already normalized (see .normalize)

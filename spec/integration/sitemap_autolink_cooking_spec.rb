@@ -126,9 +126,9 @@ RSpec.describe "Sitemap autolink cooking pipeline" do
   end
 
   describe "category exclusions (marketplace areas)" do
-    fab!(:sale_category) { Fabricate(:category) }
+    fab!(:sale_category, :category)
     fab!(:sale_subcategory) { Fabricate(:category, parent_category_id: sale_category.id) }
-    fab!(:normal_category) { Fabricate(:category) }
+    fab!(:normal_category, :category)
 
     before { SiteSetting.sitemap_autolink_excluded_categories = sale_category.id.to_s }
 

@@ -224,8 +224,8 @@ module SitemapAutolink
 
       Catalog.bump_version!
       if defined?(Rails)
-        @report[:errors].each { |e| Rails.logger.warn("sitemap-autolink sync: #{e}") }
-        @report[:notes].each { |n| Rails.logger.info("sitemap-autolink sync: #{n}") }
+        @report[:errors].each { |error| Rails.logger.warn("sitemap-autolink sync: #{error}") }
+        @report[:notes].each { |note| Rails.logger.info("sitemap-autolink sync: #{note}") }
       end
       @report
     end

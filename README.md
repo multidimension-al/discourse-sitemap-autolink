@@ -476,6 +476,11 @@ manually if you want a spotless database.
 
 ## Development
 
+Every push and pull request runs Discourse's shared plugin CI
+(`.github/workflows/discourse-plugin.yml`): rubocop, the RSpec suite and
+the JavaScript acceptance tests, against a real Discourse checkout. The
+same suites run locally:
+
 ```sh
 # in a Discourse checkout with the plugin cloned into plugins/
 
