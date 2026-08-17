@@ -164,29 +164,29 @@ function collisionsPayload() {
     competing: 1,
     collisions: [
       {
-        phrase: "proton pack",
-        winner: "https://example.com/shop/proton-pack",
+        phrase: "widget kit",
+        winner: "https://example.com/shop/widget-kit",
         linking_candidates: 2,
         candidates: [
           {
-            url: "https://example.com/shop/proton-pack",
-            title: "Proton Pack",
+            url: "https://example.com/shop/widget-kit",
+            title: "Widget Kit",
             type: "product",
             state: "auto_active",
             linking: true,
             winner: true,
           },
           {
-            url: "https://example.com/wiki/proton-pack",
-            title: "Real Ghostbusters: Proton Pack",
+            url: "https://example.com/wiki/widget-kit",
+            title: "Accessories: Widget Kit",
             type: "wiki",
             state: "auto_active",
             linking: true,
             winner: false,
           },
           {
-            url: "https://example.com/old/proton-pack",
-            title: "Proton Pack",
+            url: "https://example.com/old/widget-kit",
+            title: "Widget Kit (retired)",
             type: "wiki",
             state: "auto_active",
             linking: false,
@@ -200,7 +200,7 @@ function collisionsPayload() {
 
 function overlapsPayload() {
   return {
-    total: 1,
+    total: 2,
     page: 0,
     per_page: 50,
     pages: 1,
@@ -208,13 +208,57 @@ function overlapsPayload() {
     overlaps: [
       {
         phrase: "widget kit",
-        url: "https://example.com/shop/widget-kit",
-        type: "product",
+        linking: true,
+        owners: [
+          {
+            url: "https://example.com/shop/widget-kit",
+            title: "Widget Kit",
+            type: "product",
+            state: "approved",
+            linking: true,
+          },
+        ],
         covered_by: [
           {
-            phrase: "deluxe widget kit",
-            url: "https://example.com/shop/deluxe-widget-kit",
-            type: "product",
+            phrase: "acme widget kit gasket set",
+            linking: true,
+            owners: [
+              {
+                url: "https://example.com/shop/acme-widget-kit-gasket-set",
+                title: "Acme Widget Kit Gasket Set",
+                type: "product",
+                state: "auto_active",
+                linking: true,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        phrase: "gasket set",
+        linking: false,
+        owners: [
+          {
+            url: "https://example.com/wiki/gasket-set",
+            title: "gasket-set",
+            type: "wiki",
+            state: "pending_review",
+            linking: false,
+          },
+        ],
+        covered_by: [
+          {
+            phrase: "acme widget kit gasket set",
+            linking: true,
+            owners: [
+              {
+                url: "https://example.com/shop/acme-widget-kit-gasket-set",
+                title: "Acme Widget Kit Gasket Set",
+                type: "product",
+                state: "auto_active",
+                linking: true,
+              },
+            ],
           },
         ],
       },
@@ -677,18 +721,36 @@ acceptance("Sitemap Autolink | Admin | conflicts", function (needs) {
     );
   });
 
-  test("lists keywords buried inside longer ones", async function (assert) {
+  // A long title can contain several other pages' keywords; each of
+  // them has to be reported against it, whether or not it links today.
+  test("lists every keyword buried inside a longer one", async function (assert) {
     await visit(CONFLICTS);
 
     assert
       .dom(".sitemap-autolink-admin__overlap")
-      .exists({ count: 1 }, "overlaps get their own report");
+      .exists({ count: 2 }, "both swallowed keywords are reported");
+
     assert
-      .dom(".sitemap-autolink-admin__covering")
+      .dom(
+        ".sitemap-autolink-admin__overlap[data-phrase='widget kit'] .sitemap-autolink-admin__covering"
+      )
       .includesText(
-        "deluxe widget kit",
+        "acme widget kit gasket set",
         "naming the longer keyword that wins the span"
       );
+
+    assert
+      .dom(".sitemap-autolink-admin__overlap[data-phrase='gasket set']")
+      .includesText(
+        i18n("sitemap_autolink.admin.not_linking"),
+        "a swallowed keyword that is not live is still reported, and marked"
+      );
+
+    assert
+      .dom(
+        ".sitemap-autolink-admin__overlap[data-phrase='widget kit'] .sitemap-autolink-admin__owner a"
+      )
+      .exists("each keyword names the page that owns it");
   });
 });
 

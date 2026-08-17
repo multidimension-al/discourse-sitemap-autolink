@@ -61,6 +61,24 @@ RSpec.describe SitemapAutolink::LinkApplier do
     expect(html).not_to match(/<a[^>]*><a/)
   end
 
+  # A page whose title carries two other pages' names is one keyword,
+  # not two: wherever it appears it takes the whole span, and neither
+  # inner keyword links there.
+  it "links a long phrase as one, not the shorter phrases inside it" do
+    rules << {
+      phrase: "acme widget kit gasket set",
+      url: "https://example.com/shop/acme-widget-kit-gasket-set",
+      type: "product",
+      priority: 1,
+    }
+
+    html, count = apply("<p>I ordered the acme widget kit gasket set today.</p>")
+    expect(count).to eq(1)
+    expect(html).to include("/shop/acme-widget-kit-gasket-set")
+    expect(html).not_to include("/shop/widget-kit")
+    expect(html).not_to include("/wiki/gasket-set")
+  end
+
   # A page usually has both a short alias and its full name in the
   # catalog. Whichever the post happens to mention first must not spend
   # the page's whole per-post budget on the vaguer wording.

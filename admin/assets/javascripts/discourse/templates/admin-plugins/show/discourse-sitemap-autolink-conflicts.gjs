@@ -4,6 +4,22 @@ import DButton from "discourse/ui-kit/d-button";
 import DPageSubheader from "discourse/ui-kit/d-page-subheader";
 import { i18n } from "discourse-i18n";
 
+const Owners = <template>
+  {{#each @owners as |owner|}}
+    <div class="sitemap-autolink-admin__owner">
+      <a href={{owner.url}} rel="noopener noreferrer" target="_blank">{{if
+          owner.title
+          owner.title
+          owner.url
+        }}</a>
+      <span class="sitemap-autolink-admin__pill">{{owner.type}}</span>
+      <span
+        class="sitemap-autolink-admin__pill --state-{{owner.state}}"
+      >{{owner.state}}</span>
+    </div>
+  {{/each}}
+</template>;
+
 <template>
   <div class="sitemap-autolink-admin admin-detail">
     <DPageSubheader
@@ -147,26 +163,34 @@ import { i18n } from "discourse-i18n";
       {{/if}}
       {{#if @controller.overlaps.overlaps.length}}
         {{#each @controller.overlaps.overlaps as |overlap|}}
-          <div class="sitemap-autolink-admin__overlap">
+          <div
+            class="sitemap-autolink-admin__overlap"
+            data-phrase={{overlap.phrase}}
+          >
             <span
               class="sitemap-autolink-admin__phrase"
             >{{overlap.phrase}}</span>
-            <a
-              href={{overlap.url}}
-              rel="noopener noreferrer"
-              target="_blank"
-            >{{overlap.url}}</a>
+            {{#unless overlap.linking}}
+              <span class="sitemap-autolink-admin__pill --danger">{{i18n
+                  "sitemap_autolink.admin.not_linking"
+                }}</span>
+            {{/unless}}
+            <Owners @owners={{overlap.owners}} />
             {{#each overlap.covered_by as |longer|}}
-              <div class="sitemap-autolink-admin__covering">
+              <div
+                class="sitemap-autolink-admin__covering
+                  {{unless longer.linking 'is-inactive'}}"
+              >
                 {{i18n "sitemap_autolink.admin.covered_by_phrase"}}
                 <span
                   class="sitemap-autolink-admin__phrase"
                 >{{longer.phrase}}</span>
-                <a
-                  href={{longer.url}}
-                  rel="noopener noreferrer"
-                  target="_blank"
-                >{{longer.url}}</a>
+                {{#unless longer.linking}}
+                  <span class="sitemap-autolink-admin__pill --danger">{{i18n
+                      "sitemap_autolink.admin.not_linking"
+                    }}</span>
+                {{/unless}}
+                <Owners @owners={{longer.owners}} />
               </div>
             {{/each}}
           </div>

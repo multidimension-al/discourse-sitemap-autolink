@@ -379,29 +379,80 @@ RSpec.describe SitemapAutolinkAdminController do
       sign_in(admin)
     end
 
-    it "reports the phrases a longer phrase swallows" do
+    it "reports the keywords a longer keyword swallows" do
       get "#{base}/overlaps"
 
       json = response.parsed_body
       expect(json["total"]).to eq(1)
       overlap = json["overlaps"].first
       expect(overlap["phrase"]).to eq("frame kit")
-      expect(overlap["url"]).to eq(short_entry.url)
+      expect(overlap["linking"]).to eq(true)
+      expect(overlap["owners"].map { |o| o["url"] }).to eq([short_entry.url])
       expect(overlap["covered_by"].map { |c| c["phrase"] }).to eq(["widget frame kit"])
       expect(json["truncated"]).to eq(false)
     end
 
-    it "does not report a phrase as covering itself" do
-      short_entry.terms.first.update!(state: :disabled)
-      SitemapAutolink::Catalog.bump_version!
+    it "does not report a keyword as covering itself" do
+      short_entry.terms.first.destroy!
 
       get "#{base}/overlaps"
       expect(response.parsed_body["overlaps"]).to be_empty
     end
 
-    it "searches by phrase" do
+    # A page title carrying two other pages' names swallows both of
+    # them, and each has to be reported against the whole title.
+    it "reports every keyword a long title contains" do
+      ["Acme Widget Kit Gasket Set", "Widget Kit", "Gasket Set"].each_with_index do |phrase, i|
+        SitemapAutolinkEntry
+          .create!(
+            url: "https://example.com/gb/#{i}",
+            title: phrase,
+            content_type: "product",
+            source: "sitemap",
+          )
+          .terms
+          .create!(phrase: phrase, origin: :manual, state: :approved)
+      end
+
+      get "#{base}/overlaps", params: { q: "widget kit" }
+      overlap = response.parsed_body["overlaps"].find { |o| o["phrase"] == "widget kit" }
+      expect(overlap["covered_by"].map { |c| c["phrase"] }).to eq(
+        ["acme widget kit gasket set"],
+      )
+
+      get "#{base}/overlaps", params: { q: "gasket" }
+      overlap = response.parsed_body["overlaps"].find { |o| o["phrase"] == "gasket set" }
+      expect(overlap["covered_by"].map { |c| c["phrase"] }).to eq(
+        ["acme widget kit gasket set"],
+      )
+    end
+
+    # Sourcing the report from the compiled ruleset hid the overlaps
+    # most worth seeing: a keyword still awaiting review had none.
+    it "reports a keyword awaiting review, marked not linking" do
+      short_entry.terms.first.update!(state: :pending_review)
+      SitemapAutolink::Catalog.bump_version!
+
+      get "#{base}/overlaps"
+      overlap = response.parsed_body["overlaps"].first
+      expect(overlap["phrase"]).to eq("frame kit")
+      expect(overlap["linking"]).to eq(false)
+    end
+
+    it "narrows to overlaps that change what links" do
+      short_entry.terms.first.update!(state: :pending_review)
+      SitemapAutolink::Catalog.bump_version!
+
+      get "#{base}/overlaps", params: { only_competing: "true" }
+      expect(response.parsed_body["overlaps"]).to be_empty
+    end
+
+    it "searches by either keyword" do
       get "#{base}/overlaps", params: { q: "nothing-like-this" }
       expect(response.parsed_body["total"]).to eq(0)
+
+      get "#{base}/overlaps", params: { q: "Widget Frame" }
+      expect(response.parsed_body["overlaps"].map { |o| o["phrase"] }).to eq(["frame kit"])
     end
   end
 

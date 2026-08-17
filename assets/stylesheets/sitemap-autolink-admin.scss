@@ -216,6 +216,13 @@
     }
   }
 
+  // A keyword can belong to more than one page; each is listed under it.
+  &__owner {
+    padding-left: 1em;
+    font-size: var(--font-down-1);
+    overflow-wrap: anywhere;
+  }
+
   &__candidate.is-winner {
     font-weight: bold;
   }

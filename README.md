@@ -51,6 +51,9 @@ sitemaps ──▶ daily sync job ──▶ catalog (entries + phrases) ──�
    spent on its fullest mention rather than on whichever stray word
    for it happened to appear first. Equal-length matches fall back to
    document order, so repeated mentions of one phrase link the first.
+   Nesting follows from the same rule: if "Acme Widget Kit Gasket Set"
+   is a keyword and so are "Widget Kit" and "Gasket Set", a post
+   mentioning the long one gets exactly one link — to the long one.
    Quoted material, code blocks, existing links, and excluded
    categories are skipped. Collisions (one phrase, several
    destinations) resolve deterministically by your configured type
@@ -286,9 +289,12 @@ searched on the server.
   pre-filter to live pages — a report that silently drops disabled or
   unreviewed claimants disagrees with the catalog you are looking at —
   so a checkbox narrows it to the contests that change what links.
-  *Overlapping keywords*: keywords that sit inside a longer keyword,
-  which therefore link less often than their card suggests — the answer
-  to "why didn't my three-word keyword fire".
+  *Overlapping keywords*: keywords that sit inside a longer keyword.
+  "Acme Widget Kit Gasket Set" contains both "Widget Kit" and "Gasket
+  Set", so wherever the long one appears neither short one links there
+  — the answer to "why didn't my keyword fire". Detection reads the
+  whole catalog too, so a keyword still awaiting review shows up with
+  everything it swallows.
 - **Logs** — every sync run with its trigger, URL counts,
   added/retitled/removed counts, result (OK, Partial, Running,
   Interrupted, Failed), timing/telemetry notes, and errors.

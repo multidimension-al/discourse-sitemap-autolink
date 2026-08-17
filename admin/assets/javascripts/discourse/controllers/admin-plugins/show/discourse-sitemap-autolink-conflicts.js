@@ -63,6 +63,9 @@ export default class AdminPluginsShowSitemapAutolinkConflictsController extends 
     if (this.query) {
       data.q = this.query;
     }
+    if (this.onlyCompeting) {
+      data.only_competing = "true";
+    }
     this.overlaps = this.#record(await catalogGet("overlaps", data));
   }
 
@@ -79,11 +82,14 @@ export default class AdminPluginsShowSitemapAutolinkConflictsController extends 
     this.load();
   }
 
+  // The same question of both reports: show me only what changes which
+  // link a post actually gets.
   @action
   toggleOnlyCompeting() {
     this.onlyCompeting = !this.onlyCompeting;
     this.collisionPage = 0;
-    this.loadCollisions();
+    this.overlapPage = 0;
+    this.load();
   }
 
   @action
