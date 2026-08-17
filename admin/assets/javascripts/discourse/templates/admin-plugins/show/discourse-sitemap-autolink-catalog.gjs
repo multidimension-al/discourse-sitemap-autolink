@@ -78,6 +78,10 @@ export default <template>
             }}
           </p>
         {{/if}}
+      {{else if @controller.pluginDisabled}}
+        <p class="sitemap-autolink-admin__warning">
+          {{i18n "sitemap_autolink.admin.plugin_disabled"}}
+        </p>
       {{else}}
         <p class="sitemap-autolink-admin__warning">
           {{i18n "sitemap_autolink.admin.load_failed"}}

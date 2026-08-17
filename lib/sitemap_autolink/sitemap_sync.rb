@@ -20,6 +20,13 @@ module SitemapAutolink
     # a byte every few seconds can otherwise pin a fetch (and the whole
     # sync) indefinitely.
     MAX_FETCH_SECONDS = 30
+    # A dry run happens synchronously inside an admin's web request and
+    # fetches pages one at a time from the same (possibly slow) server a
+    # sync talks to — limit_per_source pages for EVERY configured source,
+    # at up to MAX_FETCH_SECONDS each. It needs a wall-clock cap of its
+    # own, far shorter than a sync's, or a preview can hold a web worker
+    # for many minutes.
+    PREVIEW_BUDGET_SECONDS = 60
     CANCEL_KEY = "sitemap_autolink_cancel_requested"
     RUNNING_LOCK_KEY = "sitemap_autolink_sync_running_lock"
 
@@ -136,6 +143,18 @@ module SitemapAutolink
       @deadline = monotime + @time_budget_minutes * 60
       stop_early = false
 
+      # With no sources the run gathers no evidence about any URL, so an
+      # empty seen-set would sail through mark_removed as a "clean pass"
+      # and disable the ENTIRE catalog — while reporting success. The
+      # scheduled job refuses to start without sources; `rake
+      # sitemap_autolink:sync` and console callers reach here, so the
+      # guard belongs on this side too. Recording it as an error is what
+      # keeps mark_removed off (and shows the admin why).
+      if @sources.empty?
+        @report[:errors] << "no sitemap sources configured — nothing to sync " \
+          "(set sitemap_autolink_sources)"
+      end
+
       @sources.each do |source|
         break if stop_early
         begin
@@ -163,10 +182,7 @@ module SitemapAutolink
             end
             url = SitemapAutolinkEntry.normalize_url(loc)
             next if url.empty? || seen_urls.include?(url)
-            # The sitemap protocol only allows absolute http(s) <loc>
-            # values; anything else (javascript:, data:, ftp:, …) is
-            # malformed or malicious and must never enter the catalog.
-            if !url.match?(%r{\Ahttps?://}i) || UrlFilter.excluded?(url, @url_filter)
+            if !ingestible?(url)
               @report[:excluded] += 1
               next
             end
@@ -220,29 +236,42 @@ module SitemapAutolink
     # the admin UI, rake sitemap_autolink:preview and script/preview_sync.rb.
     def preview(limit_per_source: 10, term_settings: nil)
       term_settings ||= TermGenerator.default_settings
+      deadline = monotime + PREVIEW_BUDGET_SECONDS
+      truncated = false
       result = { sources: [], errors: [] }
       @sources.each do |source|
+        if monotime > deadline
+          truncated = true
+          break
+        end
         entries = fetch_sitemap_entries(source[:url])
         if entries.nil?
           result[:errors] << "failed to fetch sitemap #{source[:url]}"
           next
         end
-        urls = entries.map { |loc, _| loc.strip }.uniq
-        excluded = urls.select { |u| UrlFilter.excluded?(u, @url_filter) }
+        # Same normalization and same admission rules a real run applies,
+        # or the "what would be ingested" list is not worth reading.
+        urls =
+          entries.map { |loc, _| SitemapAutolinkEntry.normalize_url(loc) }.reject(&:empty?).uniq
+        excluded = urls.reject { |u| ingestible?(u) }
         eligible = urls - excluded
-        sampled =
-          eligible.first(limit_per_source).map do |url|
-            title, title_source = resolve_title(url)
-            {
-              url: url,
-              title: title,
-              title_source: title_source,
-              phrases:
-                TermGenerator.generate(title.to_s, source[:type], term_settings).map do |c|
-                  { phrase: c[:phrase], state: c[:state].to_s, reason: c[:reason] }
-                end,
-            }
+        sampled = []
+        eligible.first(limit_per_source).each do |url|
+          if monotime > deadline
+            truncated = true
+            break
           end
+          title, title_source = resolve_title(url)
+          sampled << {
+            url: url,
+            title: title,
+            title_source: title_source,
+            phrases:
+              TermGenerator.generate(title.to_s, source[:type], term_settings).map do |c|
+                { phrase: c[:phrase], state: c[:state].to_s, reason: c[:reason] }
+              end,
+          }
+        end
         result[:sources] << {
           sitemap: source[:url],
           type: source[:type],
@@ -251,6 +280,12 @@ module SitemapAutolink
           excluded_sample: excluded.first(10),
           sampled: sampled,
         }
+      end
+      if truncated
+        result[:errors] << "the dry run stopped at its #{PREVIEW_BUDGET_SECONDS}-second budget, " \
+          "so the sample above is incomplete — the pages it did reach are slow to answer. " \
+          "A real sync is bounded by sitemap_autolink_sync_time_budget_minutes instead, and " \
+          "resumes across runs."
       end
       result
     end
@@ -293,6 +328,14 @@ module SitemapAutolink
 
     def complete_sitemap?(xml)
       xml.match?(%r{</\s*(urlset|sitemapindex)\s*>}i)
+    end
+
+    # Shared by the real run and the dry run. The sitemap protocol only
+    # allows absolute http(s) <loc> values; anything else (javascript:,
+    # data:, ftp:, …) is malformed or malicious and must never enter the
+    # catalog — nor a preview's "would be ingested" list.
+    def ingestible?(url)
+      url.match?(%r{\Ahttps?://}i) && !UrlFilter.excluded?(url, @url_filter)
     end
 
     def cancel_requested?
@@ -593,13 +636,19 @@ module SitemapAutolink
         .join(" ")
     end
 
+    # <loc> holds XML, and the sitemap protocol REQUIRES its reserved
+    # characters to be escaped — an ampersand is written &amp;. Storing
+    # the escaped text verbatim would point every query-string URL at a
+    # different page than the sitemap named (?a=1&amp;b=2 asks for a
+    # parameter literally called "amp;b"), so unescape before the URL is
+    # normalized, fetched or stored.
     def parse_sitemap(xml)
       xml
         .split(%r{</url>|</sitemap>}i)
         .filter_map do |block|
           loc = block[%r{<loc>\s*([^<\s]+)\s*</loc>}i, 1]
           next if loc.nil?
-          [loc, block[%r{<lastmod>\s*([^<\s]+)\s*</lastmod>}i, 1]]
+          [CGI.unescapeHTML(loc), block[%r{<lastmod>\s*([^<\s]+)\s*</lastmod>}i, 1]]
         end
     end
 

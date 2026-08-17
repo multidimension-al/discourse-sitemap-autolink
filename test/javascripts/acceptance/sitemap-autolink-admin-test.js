@@ -729,3 +729,33 @@ acceptance(
     });
   }
 );
+
+acceptance(
+  "Sitemap Autolink | Admin catalog | plugin disabled",
+  function (needs) {
+    needs.user();
+    needs.settings({ sitemap_autolink_enabled: false });
+
+    needs.hooks.beforeEach(resetState);
+
+    // With the plugin off, `requires_plugin` answers 404 for every one of
+    // its endpoints — the exact state a first-time admin lands in.
+    needs.pretender((server, helper) => {
+      server.get(`${BASE}.json`, () => helper.response(pluginPayload()));
+      ["status", "runs", "pending", "collisions", "entries"].forEach((path) =>
+        server.get(`${BASE}/${path}`, () => helper.response(404, {}))
+      );
+    });
+
+    test("names the cause instead of blaming the error log", async function (assert) {
+      await visit(CATALOG_URL);
+
+      assert
+        .dom(".sitemap-autolink-admin__status .sitemap-autolink-admin__warning")
+        .hasText(
+          i18n("sitemap_autolink.admin.plugin_disabled"),
+          "the page reads its own 404s as 'the plugin is disabled'"
+        );
+    });
+  }
+);

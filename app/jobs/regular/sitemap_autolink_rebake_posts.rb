@@ -40,7 +40,11 @@ module Jobs
       return if budget <= 0
 
       after_id = args[:after_id].to_i
-      patterns = phrases.map { |p| "%#{ActiveRecord::Base.sanitize_sql_like(p)}%" }
+      patterns =
+        phrases
+          .flat_map { |p| raw_spellings(p) }
+          .uniq
+          .map { |p| "%#{ActiveRecord::Base.sanitize_sql_like(p)}%" }
 
       batch =
         Post
@@ -85,6 +89,17 @@ module Jobs
     end
 
     private
+
+    # Phrases arrive NORMALIZED — Matcher.normalize folds ’ and ‘ to a
+    # straight apostrophe — but posts.raw is exactly what the member
+    # typed. A post written "Foreman’s Field Guide" gets its link at cook
+    # time and would be invisible to a `raw ILIKE '%foreman's…%'`
+    # candidate filter, so ask for each spelling the matcher accepts.
+    # Only apostrophe phrases pay the extra patterns.
+    def raw_spellings(phrase)
+      return [phrase] if !phrase.include?("'")
+      [phrase, phrase.tr("'", "’"), phrase.tr("'", "‘")]
+    end
 
     # The same phrase set the cook-time matcher links: manual mappings
     # plus active catalog terms, after the enabled-types, excluded-terms

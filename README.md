@@ -251,6 +251,8 @@ for everything the plugin does:
   review, and configuration warnings (e.g. entries whose type isn't
   currently allowed to link).
 - **Preview (dry run)** — what the next sync would do, without writing.
+  It applies the same admission rules a real sync does, and is bounded
+  to 60 seconds so a slow site can't hold the request open.
 - **Sync now / Cancel run** — trigger a sync; a running sync can be
   cancelled and keeps the work completed so far.
 - **Rebake matching posts** — one click to catch existing posts up

@@ -105,4 +105,24 @@ RSpec.describe SitemapAutolink::LinkApplier do
     expect(html).not_to include("evil.example")
     expect(html).to include('href="/faq"')
   end
+
+  # A leading single slash is supposed to mean "this forum". Browsers
+  # normalize \ to / and delete tab/LF/CR before parsing, so both of
+  # these navigate to https://evil.example — they are protocol-relative
+  # URLs wearing a disguise, and must not survive compilation.
+  it "drops relative URLs that a browser would resolve to another origin" do
+    escapes =
+      SitemapAutolink::Ruleset.compile(
+        [
+          { phrase: "widget kit", url: "/\\evil.example/x", type: "product", priority: 1 },
+          { phrase: "gasket set", url: "/\t/evil.example/x", type: "wiki", priority: 1 },
+          { phrase: "site faq", url: "/faq", type: "manual", priority: 0 },
+        ],
+      )
+    expect(escapes.rules.map { |r| r[:phrase] }).to eq(["site faq"])
+
+    doc = Nokogiri::HTML5.fragment("<p>widget kit, gasket set and the site faq</p>")
+    described_class.apply!(doc, escapes, options)
+    expect(doc.to_html).not_to include("evil.example")
+  end
 end

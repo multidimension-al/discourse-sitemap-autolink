@@ -20,6 +20,15 @@ RSpec.describe Jobs::SitemapAutolinkRebakePosts do
     expect(ids).to contain_exactly(matching.id, matching_twice.id)
   end
 
+  # Catalog phrases are normalized to a straight apostrophe; posts keep
+  # whatever the member typed. Such a post gets its link at cook time, so
+  # the candidate filter has to be able to find it.
+  it "finds posts that spell a phrase with a typographic apostrophe" do
+    curly = Fabricate(:post, raw: "I keep Foreman’s Field Guide on the bench")
+    ids = rebaked_ids { described_class.new.execute(phrases: ["foreman's field guide"]) }
+    expect(ids).to eq([curly.id])
+  end
+
   it "ignores blank and too-short phrases" do
     ids = rebaked_ids { described_class.new.execute(phrases: ["", "  ", "ab"]) }
     expect(ids).to be_empty
