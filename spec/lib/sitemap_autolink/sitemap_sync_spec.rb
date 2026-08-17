@@ -408,11 +408,12 @@ RSpec.describe SitemapAutolink::SitemapSync do
       "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
       "#{base}/shop/widget" => page_html("Widget Alpha Kit"),
     }
-    stub_const("#{described_class}::PREVIEW_BUDGET_SECONDS", -1)
-    result = build_sync(responses).preview(limit_per_source: 5)
+    stub_const(described_class, :PREVIEW_BUDGET_SECONDS, -1) do
+      result = build_sync(responses).preview(limit_per_source: 5)
 
-    expect(result[:sources]).to be_empty
-    expect(result[:errors].join).to include("the dry run stopped at its")
+      expect(result[:sources]).to be_empty
+      expect(result[:errors].join).to include("the dry run stopped at its")
+    end
   end
 
   it "keeps apostrophes inside og:title attribute values intact" do

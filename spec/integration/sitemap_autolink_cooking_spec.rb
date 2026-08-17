@@ -4,7 +4,9 @@
 # pipelines (PostCreator, PostRevisor, Post#rebake!): raw stays
 # untouched, cooked gains reversible links.
 RSpec.describe "Sitemap autolink cooking pipeline" do
-  fab!(:user)
+  # Without the auto groups a fabricated user is in no trust-level
+  # group, and the group-based permission settings refuse the topic.
+  fab!(:user) { Fabricate(:user, refresh_auto_groups: true) }
 
   before do
     Jobs.run_immediately!

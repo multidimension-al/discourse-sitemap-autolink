@@ -74,7 +74,17 @@ after_initialize do
     # that would resolve the controller as Admin::…; the controller is a
     # top-level class (auth enforced by Admin::AdminController it
     # inherits from, plus the StaffConstraint here).
-    scope "/admin/plugins/discourse-sitemap-autolink", constraints: StaffConstraint.new do
+    # `defaults: { format: :json }` is load-bearing, not decoration. An
+    # admin-namespaced request that arrives asking for HTML is answered
+    # with the admin SPA shell before this controller's own filters run
+    # — so without it these endpoints return a page of HTML to anything
+    # that does not set an Accept header (curl, a script, a spec), and
+    # `requires_plugin` never gets to refuse a disabled plugin.
+    scope "/admin/plugins/discourse-sitemap-autolink",
+          constraints: StaffConstraint.new,
+          defaults: {
+            format: :json,
+          } do
       get "entries" => "sitemap_autolink_admin#entries"
       post "entries" => "sitemap_autolink_admin#create_entry"
       put "entries/:id" => "sitemap_autolink_admin#update_entry"
