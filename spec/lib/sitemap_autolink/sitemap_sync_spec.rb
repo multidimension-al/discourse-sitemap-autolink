@@ -101,6 +101,45 @@ RSpec.describe SitemapAutolink::SitemapSync do
     expect(SitemapAutolinkEntry.pluck(:url)).to eq(["#{base}/shop/widget"])
   end
 
+  # <loc> is XML, and the sitemap protocol requires & to be written
+  # &amp; — so every query-string URL arrives escaped. The stub is keyed
+  # by the UNESCAPED URL: it only answers if the escaping was undone.
+  it "unescapes XML entities in sitemap <loc> values" do
+    real_url = "#{base}/shop/widget?colour=red&size=large"
+    responses = {
+      "#{base}/sitemap-products.xml" => "<?xml version=\"1.0\"?><urlset>" \
+        "<url><loc>#{base}/shop/widget?colour=red&amp;size=large</loc></url></urlset>",
+      real_url => page_html("Widget Frame Kit"),
+    }
+    report = build_sync(responses).run!
+
+    expect(report[:errors]).to be_empty
+    expect(report[:added]).to eq([real_url])
+    entry = SitemapAutolinkEntry.find_by(url: real_url)
+    expect(entry.title).to eq("Widget Frame Kit")
+    expect(entry.title_source).to eq("page")
+  end
+
+  it "refuses to read a sourceless run as a clean pass over the catalog" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha"),
+    }
+    build_sync(responses).run!
+
+    report =
+      described_class.new(
+        sources: [],
+        title_suffixes: [],
+        page_fetch_delay_ms: 0,
+        http_get: ->(_url, _max) { nil },
+      ).run!
+
+    expect(report[:errors].join).to include("no sitemap sources configured")
+    expect(report[:removed]).to be_empty
+    expect(SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget").removed_from_source).to be(false)
+  end
+
   it "composes suffix fragments split by the | list separator" do
     responses = {
       "#{base}/sitemap-products.xml" => sitemap_xml([["/wiki/widget-history", nil]]),
@@ -331,6 +370,49 @@ RSpec.describe SitemapAutolink::SitemapSync do
     page = source[:sampled].first
     expect(page[:title]).to eq("Widget Frame Kit")
     expect(page[:phrases].map { |p| p[:phrase] }).to include("Widget Frame Kit")
+  end
+
+  # A dry run is only worth reading if it applies the same admission
+  # rules the real run does — otherwise it advertises pages that could
+  # never be ingested (and spends a fetch trying).
+  it "previews only what a real run would ingest" do
+    responses = {
+      "#{base}/sitemap-products.xml" => "<?xml version=\"1.0\"?><urlset>" \
+        "<url><loc>javascript:alert(1)</loc></url>" \
+        "<url><loc>#{base}/shop/widget-frame-kit/</loc></url></urlset>",
+      "#{base}/shop/widget-frame-kit" => page_html("Widget Frame Kit"),
+    }
+    fetched = []
+    sync =
+      described_class.new(
+        sources: sources,
+        title_suffixes: [],
+        page_fetch_delay_ms: 0,
+        http_get: ->(url, _max) do
+          fetched << url
+          responses[url]
+        end,
+      )
+    source = sync.preview(limit_per_source: 5)[:sources].first
+
+    expect(fetched).not_to include("javascript:alert(1)")
+    expect(source[:excluded_by_pattern]).to eq(1)
+    expect(source[:excluded_sample]).to eq(["javascript:alert(1)"])
+    # …and the sampled URL is normalized exactly as it would be stored.
+    expect(source[:sampled].map { |s| s[:url] }).to eq(["#{base}/shop/widget-frame-kit"])
+    expect(source[:sampled].first[:title]).to eq("Widget Frame Kit")
+  end
+
+  it "stops a dry run at its own wall-clock budget instead of pinning the request" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha Kit"),
+    }
+    stub_const("#{described_class}::PREVIEW_BUDGET_SECONDS", -1)
+    result = build_sync(responses).preview(limit_per_source: 5)
+
+    expect(result[:sources]).to be_empty
+    expect(result[:errors].join).to include("the dry run stopped at its")
   end
 
   it "keeps apostrophes inside og:title attribute values intact" do

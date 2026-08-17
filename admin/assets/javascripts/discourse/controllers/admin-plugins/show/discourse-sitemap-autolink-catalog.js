@@ -23,6 +23,7 @@ export default class AdminPluginsShowSitemapAutolinkCatalogController extends Co
   @tracked previewLoading = false;
   @tracked notice = null;
   @tracked syncing = false;
+  @tracked pluginDisabled = false;
 
   @tracked searchQuery = "";
   @tracked typeFilter = "";
@@ -53,7 +54,8 @@ export default class AdminPluginsShowSitemapAutolinkCatalogController extends Co
     }
     return {
       entry_types: (s.entry_types || []).join(", "),
-      allowed: s.enabled_types_setting || i18n("sitemap_autolink.admin.all_types"),
+      allowed:
+        s.enabled_types_setting || i18n("sitemap_autolink.admin.all_types"),
     };
   }
 
@@ -85,7 +87,19 @@ export default class AdminPluginsShowSitemapAutolinkCatalogController extends Co
 
   @action
   async refreshAll() {
-    const get = (path, data) => ajax(`${BASE}/${path}`, { data }).catch(() => null);
+    // While sitemap_autolink_enabled is off, `requires_plugin` answers
+    // 404 for every endpoint on this page. That is a diagnosis, not an
+    // outage — and it is the one an admin opening this page for the
+    // first time most needs to read, so it must not be reported as
+    // "something failed, check your logs".
+    let notFound = false;
+    const get = (path, data) =>
+      ajax(`${BASE}/${path}`, { data }).catch((error) => {
+        if (error?.jqXHR?.status === 404) {
+          notFound = true;
+        }
+        return null;
+      });
     const [status, runs, pending, collisions, entries] = await Promise.all([
       get("status"),
       get("runs"),
@@ -93,6 +107,7 @@ export default class AdminPluginsShowSitemapAutolinkCatalogController extends Co
       get("collisions"),
       get("entries", this.entriesParams()),
     ]);
+    this.pluginDisabled = notFound;
     this.status = status || this.status;
     this.runs = runs?.runs || this.runs;
     this.pendingTerms = pending?.pending || [];

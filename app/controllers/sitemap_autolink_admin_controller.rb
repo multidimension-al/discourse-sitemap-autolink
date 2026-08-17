@@ -169,6 +169,22 @@ class SitemapAutolinkAdminController < Admin::AdminController
         .group(:normalized_phrase)
         .having("COUNT(DISTINCT entry_id) > 1")
         .pluck(:normalized_phrase)
+    # Candidates are scoped to ACTIVE entries exactly like the collision
+    # detection above: a disabled entry is not competing for the phrase,
+    # so listing it would invent a conflict that no longer exists. One
+    # query for every candidate, not one per colliding phrase.
+    candidates_by_phrase =
+      SitemapAutolinkTerm
+        .linkable
+        .joins(:entry)
+        .merge(SitemapAutolinkEntry.active)
+        .where(normalized_phrase: duplicated)
+        .pluck(
+          "sitemap_autolink_terms.normalized_phrase",
+          "sitemap_autolink_entries.url",
+          "sitemap_autolink_entries.content_type",
+        )
+        .group_by(&:first)
     render json: {
              collisions:
                duplicated.sort.map do |phrase|
@@ -176,15 +192,9 @@ class SitemapAutolinkAdminController < Admin::AdminController
                    phrase: phrase,
                    winner: winners.dig(phrase, :url),
                    candidates:
-                     SitemapAutolinkTerm
-                       .linkable
-                       .joins(:entry)
-                       .where(normalized_phrase: phrase)
-                       .pluck(
-                         "sitemap_autolink_entries.url",
-                         "sitemap_autolink_entries.content_type",
-                       )
-                       .map { |url, type| { url: url, type: type } },
+                     (candidates_by_phrase[phrase] || []).map do |_p, url, type|
+                       { url: url, type: type }
+                     end,
                  }
                end,
            }
