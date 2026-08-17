@@ -96,6 +96,29 @@ HTML
   problems
 end
 
+check "a long phrase swallows the shorter ones inside it",
+      <<~HTML,
+  <p>I ordered the Acme Widget Kit Gasket Set today.</p>
+HTML
+      rules:
+        RULES +
+          [
+            {
+              phrase: "acme widget kit gasket set",
+              url: "https://example.com/shop/acme-widget-kit-gasket-set",
+              type: "product",
+              priority: 1,
+            },
+          ] do |html, inserted|
+  problems = []
+  problems << "expected 1 link, got #{inserted}" if inserted != 1
+  unless html.include?(">Acme Widget Kit Gasket Set</a>")
+    problems << "the whole phrase was not linked as one"
+  end
+  problems << "an inner phrase linked separately" if html.include?("/shop/widget-kit")
+  problems
+end
+
 check "a longer phrase starting later still wins",
       <<~HTML,
   <p>A widget kit deluxe frame is what I need.</p>

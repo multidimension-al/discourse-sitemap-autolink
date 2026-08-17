@@ -31,10 +31,10 @@ class SitemapAutolinkAdminController < Admin::AdminController
   # at, which may be thousands of rows).
   MAX_BULK_IDS = 1000
 
-  # The overlap report walks every phrase through the automaton. The cap
-  # bounds the response of a pathological catalog rather than the work,
-  # which is linear in total phrase length and takes ~50 ms at 7,500
-  # phrases.
+  # The overlap report walks every keyword through an automaton built
+  # from every keyword. The cap bounds the response of a pathological
+  # catalog rather than the work, which is linear in total keyword
+  # length.
   MAX_OVERLAP_PAIRS = 5000
 
   def status
@@ -68,13 +68,17 @@ class SitemapAutolinkAdminController < Admin::AdminController
   def preview
     if SiteSetting.sitemap_autolink_sources.blank?
       render json: failed_json.merge(error: "configure sitemap_autolink_sources first"),
-             status: 422
+             status: :unprocessable_content
       return
     end
     limit = (params[:limit] || 10).to_i.clamp(1, 50)
     render json: SitemapAutolink::SitemapSync.new.preview(limit_per_source: limit)
   end
 
+  # The catalog, grouped the way it is managed: one page with all of its
+  # keywords, not one row per keyword. The question an admin actually
+  # asks is "what points at THIS url" — so a search for a phrase returns
+  # the page that owns it, with its whole phrase list intact.
   def entries
     scope = SitemapAutolinkEntry.includes(:terms).order(:url)
     scope = scope.where(content_type: params[:type]) if params[:type].present?
@@ -83,26 +87,35 @@ class SitemapAutolinkAdminController < Admin::AdminController
       q = "%#{ActiveRecord::Base.sanitize_sql_like(params[:q])}%"
       scope =
         scope.where(
-          "sitemap_autolink_entries.url ILIKE :q OR sitemap_autolink_entries.title ILIKE :q",
+          "sitemap_autolink_entries.url ILIKE :q OR sitemap_autolink_entries.title ILIKE :q " \
+            "OR EXISTS (SELECT 1 FROM sitemap_autolink_terms " \
+            "WHERE sitemap_autolink_terms.entry_id = sitemap_autolink_entries.id " \
+            "AND (sitemap_autolink_terms.phrase ILIKE :q " \
+            "OR sitemap_autolink_terms.normalized_phrase ILIKE :q))",
           q: q,
         )
     end
-    if params[:pending] == "true"
+    if params[:state].present?
       scope =
         scope.where(
-          id: SitemapAutolinkTerm.pending_review.select(:entry_id),
+          id: SitemapAutolinkTerm.where(state: validated_state(params[:state])).select(:entry_id),
         )
     end
     page = current_page
     total = scope.count
+    records = scope.offset(page * PAGE_SIZE).limit(PAGE_SIZE).to_a
+    duplicates = duplicate_phrases(records)
     render json: {
              total: total,
              page: page,
              per_page: PAGE_SIZE,
              pages: page_count(total),
              types: entry_types,
-             entries:
-               scope.offset(page * PAGE_SIZE).limit(PAGE_SIZE).map { |e| serialize_entry(e) },
+             # Phrase counts, not page counts: the state filters and the
+             # bulk actions beside them both act on phrases, and they
+             # must agree about how many.
+             state_counts: state_counts(term_scope(params)),
+             entries: records.map { |e| serialize_entry(e, duplicates: duplicates) },
            }
   end
 
@@ -215,12 +228,22 @@ class SitemapAutolinkAdminController < Admin::AdminController
     render json: success_json
   end
 
-  # Aliases claimed by more than one active entry, with the winner the
-  # compiled ruleset actually chose.
+  # Every phrase claimed by more than one page.
+  #
+  # Detection deliberately does NOT pre-filter to active entries and
+  # linkable terms. Scoping it that way made the report disagree with
+  # the catalog an admin is looking at: four pages visibly claiming
+  # one phrase were reported as zero conflicts because the query
+  # silently dropped whichever of them were disabled or awaiting
+  # review. Detect broadly, then annotate — `linking` marks the
+  # candidates actually competing, `winner` the one the compiled
+  # ruleset chose, and `linking_candidates` how many are in the fight.
+  # `only_competing=true` narrows to phrases where that is more than
+  # one, for an admin who wants just the live contests.
   def collisions
     ruleset = SitemapAutolink::Catalog.ruleset
     winners = ruleset.rules.index_by { |r| r[:phrase] }
-    scope = linkable_terms
+    scope = SitemapAutolinkTerm.all
     if params[:q].present?
       scope =
         scope.where(
@@ -231,64 +254,115 @@ class SitemapAutolinkAdminController < Admin::AdminController
     duplicated =
       scope.group(:normalized_phrase).having("COUNT(DISTINCT entry_id) > 1").pluck(
         :normalized_phrase,
-      ).sort
-    page = current_page
-    shown = duplicated[page * PAGE_SIZE, PAGE_SIZE] || []
-    # Candidates are scoped to ACTIVE entries exactly like the collision
-    # detection above: a disabled entry is not competing for the phrase,
-    # so listing it would invent a conflict that no longer exists. One
-    # query for the page's candidates, not one per colliding phrase.
+      )
+
+    # One query for every candidate of every duplicated phrase, then the
+    # competing-count filter and the page slice happen in Ruby — both
+    # need `linking`, which is two columns of the entry plus the term's
+    # own state.
     candidates_by_phrase =
-      linkable_terms
-        .where(normalized_phrase: shown)
+      SitemapAutolinkTerm
+        .joins(:entry)
+        .where(normalized_phrase: duplicated)
         .pluck(
           "sitemap_autolink_terms.normalized_phrase",
           "sitemap_autolink_entries.url",
           "sitemap_autolink_entries.title",
           "sitemap_autolink_entries.content_type",
+          "sitemap_autolink_terms.state",
+          "sitemap_autolink_entries.enabled",
+          "sitemap_autolink_entries.removed_from_source",
         )
         .group_by(&:first)
+
+    reports =
+      duplicated.sort.map do |phrase|
+        winner = winners.dig(phrase, :url)
+        candidates =
+          (candidates_by_phrase[phrase] || []).map do |_p, url, title, type, state, enabled, removed|
+            name = SitemapAutolinkTerm.state_name(state)
+            linking =
+              SitemapAutolinkTerm::LINKABLE_STATES.include?(name) && enabled && !removed
+            {
+              url: url,
+              title: title,
+              type: type,
+              state: name,
+              linking: linking,
+              winner: linking && url == winner,
+            }
+          end
+        {
+          phrase: phrase,
+          winner: winner,
+          linking_candidates: candidates.count { |c| c[:linking] },
+          candidates: candidates,
+        }
+      end
+    reports.select! { |r| r[:linking_candidates] > 1 } if params[:only_competing] == "true"
+
+    page = current_page
     render json: {
-             total: duplicated.size,
+             total: reports.size,
              page: page,
              per_page: PAGE_SIZE,
-             pages: page_count(duplicated.size),
-             collisions:
-               shown.map do |phrase|
-                 winner = winners.dig(phrase, :url)
-                 {
-                   phrase: phrase,
-                   winner: winner,
-                   candidates:
-                     (candidates_by_phrase[phrase] || []).map do |_p, url, title, type|
-                       { url: url, title: title, type: type, winner: url == winner }
-                     end,
-                 }
-               end,
+             pages: page_count(reports.size),
+             competing: reports.count { |r| r[:linking_candidates] > 1 },
+             collisions: reports[page * PAGE_SIZE, PAGE_SIZE] || [],
            }
   end
 
-  # Phrases that sit inside a longer active phrase. Both are live rules,
-  # but wherever the longer one appears it takes the span — so these are
-  # the keywords that fire less often than their catalog row suggests.
-  # Answering "why did my three-word phrase not link" with a report
-  # beats answering it by reading rendered posts.
+  # Keywords that sit inside a longer keyword.
+  #
+  # "Acme Widget Kit Gasket Set" contains "Widget Kit" and "Gasket
+  # Set". All three are keywords; wherever the long one
+  # appears it takes the whole span and the two short ones do not fire,
+  # which is what an admin needs told.
+  #
+  # Detection runs over the WHOLE catalog, not the compiled ruleset. The
+  # ruleset holds only linkable terms on live pages, deduplicated to one
+  # rule per phrase — so sourcing the report from it hid exactly the
+  # overlaps worth seeing: a keyword still awaiting review, or one on a
+  # page someone disabled, silently had no overlaps at all.
   def overlaps
-    ruleset = SitemapAutolink::Catalog.ruleset
-    matcher = ruleset.matcher
+    owners = Hash.new { |all, phrase| all[phrase] = [] }
+    SitemapAutolinkTerm
+      .joins(:entry)
+      .pluck(
+        "sitemap_autolink_terms.normalized_phrase",
+        "sitemap_autolink_entries.url",
+        "sitemap_autolink_entries.title",
+        "sitemap_autolink_entries.content_type",
+        "sitemap_autolink_terms.state",
+        "sitemap_autolink_entries.enabled",
+        "sitemap_autolink_entries.removed_from_source",
+      )
+      .each do |phrase, url, title, type, state, enabled, removed|
+        name = SitemapAutolinkTerm.state_name(state)
+        owners[phrase] << {
+          url: url,
+          title: title,
+          type: type,
+          state: name,
+          linking: SitemapAutolinkTerm::LINKABLE_STATES.include?(name) && enabled && !removed,
+        }
+      end
+
+    # One automaton over every distinct keyword, then each keyword is
+    # scanned through it: whatever else it contains — on word
+    # boundaries, so "kit" is not found inside "kitbash" — is a keyword
+    # it swallows. Linear in total keyword length; ~100 ms at 7,500.
+    matcher = SitemapAutolink::Matcher.new(owners.keys.map { |phrase| { phrase: phrase } })
     covered_by = Hash.new { |shadowed, phrase| shadowed[phrase] = [] }
     truncated = false
     pairs = 0
-
-    ruleset.rules.each do |rule|
+    owners.each_key do |long|
       matcher
-        .scan(rule[:phrase])
+        .scan(long)
         .each do |candidate|
-          inner = candidate[:rule]
-          # Compiled rules are unique per phrase, so an equal phrase is
-          # the rule matching itself.
-          next if inner[:phrase] == rule[:phrase]
-          covered_by[inner[:phrase]] << rule
+          inner = candidate[:rule][:phrase]
+          next if inner == long
+          covered_by[inner] << long
           pairs += 1
         end
       if pairs >= MAX_OVERLAP_PAIRS
@@ -297,16 +371,22 @@ class SitemapAutolinkAdminController < Admin::AdminController
       end
     end
 
-    by_phrase = ruleset.rules.index_by { |r| r[:phrase] }
+    linking = ->(phrase) { owners[phrase].any? { |o| o[:linking] } }
     phrases = covered_by.keys
     if params[:q].present?
-      needle = params[:q].to_s.downcase
-      phrases = phrases.select { |phrase| phrase.include?(needle) }
+      needle = SitemapAutolink::Matcher.normalize(params[:q].to_s)
+      phrases =
+        phrases.select do |phrase|
+          phrase.include?(needle) || covered_by[phrase].any? { |long| long.include?(needle) }
+        end
+    end
+    # An overlap only changes what links when both keywords are live.
+    if params[:only_competing] == "true"
+      phrases.select! { |phrase| linking.call(phrase) && covered_by[phrase].any?(&linking) }
     end
     phrases.sort!
-    page = current_page
-    shown = phrases[page * PAGE_SIZE, PAGE_SIZE] || []
 
+    page = current_page
     render json: {
              total: phrases.size,
              page: page,
@@ -314,17 +394,15 @@ class SitemapAutolinkAdminController < Admin::AdminController
              pages: page_count(phrases.size),
              truncated: truncated,
              overlaps:
-               shown.map do |phrase|
-                 rule = by_phrase[phrase]
+               (phrases[page * PAGE_SIZE, PAGE_SIZE] || []).map do |phrase|
                  {
                    phrase: phrase,
-                   url: rule && rule[:url],
-                   type: rule && rule[:type],
+                   linking: linking.call(phrase),
+                   owners: owners[phrase],
                    covered_by:
-                     covered_by[phrase]
-                       .uniq { |r| r[:phrase] }
-                       .sort_by { |r| r[:phrase] }
-                       .map { |r| { phrase: r[:phrase], url: r[:url], type: r[:type] } },
+                     covered_by[phrase].uniq.sort.map do |long|
+                       { phrase: long, linking: linking.call(long), owners: owners[long] }
+                     end,
                  }
                end,
            }
@@ -337,7 +415,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
                  failed_json.merge(
                    error: "A synchronization is already running — cancel it or wait for it to finish.",
                  ),
-               status: 409
+               status: :conflict
       )
     end
     # A deliberate Sync now lifts any lingering admin cancel.
@@ -367,7 +445,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
       Jobs.enqueue(:sitemap_autolink_rebake_posts, phrases: [params[:phrase]])
       render json: success_json
     else
-      render json: failed_json, status: 422
+      render json: failed_json, status: :unprocessable_content
     end
   end
 
@@ -387,6 +465,21 @@ class SitemapAutolinkAdminController < Admin::AdminController
 
   def linkable_terms
     SitemapAutolinkTerm.linkable.joins(:entry).merge(SitemapAutolinkEntry.active)
+  end
+
+  # Which of THIS page's phrases another page also claims, so a keyword
+  # that is fought over is marked where the admin is reading it instead
+  # of only in a report they have to go looking for. One extra query,
+  # bounded by the phrases on screen.
+  def duplicate_phrases(entries)
+    phrases = entries.flat_map { |e| e.terms.map(&:normalized_phrase) }.uniq
+    return Set.new if phrases.empty?
+    SitemapAutolinkTerm
+      .where(normalized_phrase: phrases)
+      .group(:normalized_phrase)
+      .having("COUNT(DISTINCT entry_id) > 1")
+      .pluck(:normalized_phrase)
+      .to_set
   end
 
   # Everything but the state filter, so one call serves both the listing
@@ -481,7 +574,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
     }
   end
 
-  def serialize_entry(entry)
+  def serialize_entry(entry, duplicates: nil)
     {
       id: entry.id,
       url: entry.url,
@@ -494,11 +587,15 @@ class SitemapAutolinkAdminController < Admin::AdminController
       title_source: entry.title_source,
       source: entry.source,
       last_seen_at: entry.last_seen_at,
-      terms: entry.terms.sort_by(&:normalized_phrase).map { |t| serialize_term(t) },
+      terms:
+        entry
+          .terms
+          .sort_by(&:normalized_phrase)
+          .map { |t| serialize_term(t, duplicates: duplicates) },
     }
   end
 
-  def serialize_term(term, entry: nil)
+  def serialize_term(term, entry: nil, duplicates: nil)
     result = {
       id: term.id,
       entry_id: term.entry_id,
@@ -508,6 +605,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
       origin: term.origin,
       review_reason: term.review_reason,
     }
+    result[:duplicate] = duplicates.include?(term.normalized_phrase) if duplicates
     if entry
       result[:entry_url] = entry.url
       result[:entry_title] = entry.title

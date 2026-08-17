@@ -4,7 +4,9 @@
 # pipelines (PostCreator, PostRevisor, Post#rebake!): raw stays
 # untouched, cooked gains reversible links.
 RSpec.describe "Sitemap autolink cooking pipeline" do
-  fab!(:user)
+  # Without the auto groups a fabricated user is in no trust-level
+  # group, and the group-based permission settings refuse the topic.
+  fab!(:user) { Fabricate(:user, refresh_auto_groups: true) }
 
   before do
     Jobs.run_immediately!
@@ -126,9 +128,9 @@ RSpec.describe "Sitemap autolink cooking pipeline" do
   end
 
   describe "category exclusions (marketplace areas)" do
-    fab!(:sale_category) { Fabricate(:category) }
+    fab!(:sale_category, :category)
     fab!(:sale_subcategory) { Fabricate(:category, parent_category_id: sale_category.id) }
-    fab!(:normal_category) { Fabricate(:category) }
+    fab!(:normal_category, :category)
 
     before { SiteSetting.sitemap_autolink_excluded_categories = sale_category.id.to_s }
 

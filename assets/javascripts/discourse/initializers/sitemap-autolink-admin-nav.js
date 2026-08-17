@@ -2,6 +2,8 @@ import { withPluginApi } from "discourse/lib/plugin-api";
 
 const PLUGIN_ID = "discourse-sitemap-autolink";
 
+const PAGES = ["overview", "keywords", "conflicts", "logs"];
+
 export default {
   name: "sitemap-autolink-admin-nav",
 
@@ -12,12 +14,13 @@ export default {
     }
 
     withPluginApi((api) => {
-      api.addAdminPluginConfigurationNav(PLUGIN_ID, [
-        {
-          label: "sitemap_autolink.admin.catalog_title",
-          route: "adminPlugins.show.discourse-sitemap-autolink-catalog",
-        },
-      ]);
+      api.addAdminPluginConfigurationNav(
+        PLUGIN_ID,
+        PAGES.map((page) => ({
+          label: `sitemap_autolink.admin.nav.${page}`,
+          route: `adminPlugins.show.discourse-sitemap-autolink-${page}`,
+        }))
+      );
     });
   },
 };

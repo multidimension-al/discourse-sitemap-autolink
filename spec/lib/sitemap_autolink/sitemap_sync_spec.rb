@@ -408,11 +408,12 @@ RSpec.describe SitemapAutolink::SitemapSync do
       "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
       "#{base}/shop/widget" => page_html("Widget Alpha Kit"),
     }
-    stub_const("#{described_class}::PREVIEW_BUDGET_SECONDS", -1)
-    result = build_sync(responses).preview(limit_per_source: 5)
+    stub_const(described_class, :PREVIEW_BUDGET_SECONDS, -1) do
+      result = build_sync(responses).preview(limit_per_source: 5)
 
-    expect(result[:sources]).to be_empty
-    expect(result[:errors].join).to include("the dry run stopped at its")
+      expect(result[:sources]).to be_empty
+      expect(result[:errors].join).to include("the dry run stopped at its")
+    end
   end
 
   it "keeps apostrophes inside og:title attribute values intact" do
@@ -478,8 +479,9 @@ RSpec.describe SitemapAutolink::SitemapSync do
         page_fetch_delay_ms: 50,
         http_get: ->(url, _max) { responses[url] },
       )
-    expect(sync).to receive(:sleep).with(0.05).twice
+    allow(sync).to receive(:sleep)
     sync.run!
+    expect(sync).to have_received(:sleep).with(0.05).twice
   end
 
   it "does not mark entries removed when a sitemap fetch errored" do
@@ -489,7 +491,7 @@ RSpec.describe SitemapAutolink::SitemapSync do
     }
     build_sync(responses).run!
 
-    report = build_sync("#{base}/sitemap-products.xml" => nil).run!
+    report = build_sync({ "#{base}/sitemap-products.xml" => nil }).run!
     expect(report[:errors]).not_to be_empty
     expect(SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget").removed_from_source).to be(false)
   end
@@ -502,7 +504,7 @@ RSpec.describe SitemapAutolink::SitemapSync do
     build_sync(responses).run!
 
     truncated = "<?xml version=\"1.0\"?><urlset><url><loc>#{base}/shop/other</loc></url>"
-    report = build_sync("#{base}/sitemap-products.xml" => truncated).run!
+    report = build_sync({ "#{base}/sitemap-products.xml" => truncated }).run!
     expect(report[:errors].join).to include("incomplete")
     expect(report[:seen]).to eq(0)
     expect(SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget").removed_from_source).to be(false)

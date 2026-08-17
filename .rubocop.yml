@@ -1,0 +1,10 @@
+inherit_gem:
+  rubocop-discourse: stree-compat.yml
+
+AllCops:
+  Exclude:
+    # Standalone developer tools, run as `ruby script/x.rb` outside a
+    # Discourse boot. The plugin cops here (namespace your constants and
+    # methods) are aimed at code loaded into Discourse's global scope;
+    # these files are never loaded by it.
+    - "script/**/*"

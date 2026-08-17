@@ -42,6 +42,16 @@ function cancelNavigation(event) {
   event.preventDefault();
 }
 
+// window.dataLayer is a queue shared with whatever else on the page
+// uses it — Discourse pushes to it as well once it exists, so a raw
+// length is not a count of what this plugin did. Only the plugin's own
+// events are this suite's business.
+function autolinkEvents() {
+  return (window.dataLayer || []).filter(
+    (event) => event.event === "internal_auto_link_click"
+  );
+}
+
 function trackingHooks(needs) {
   needs.hooks.beforeEach(function () {
     window.dataLayer = [];
@@ -79,9 +89,10 @@ acceptance("Sitemap Autolink | click analytics", function (needs) {
 
     await click("a.sitemap-autolink");
 
-    assert.strictEqual(window.dataLayer.length, 1, "one event was pushed");
+    const pushed = autolinkEvents();
+    assert.strictEqual(pushed.length, 1, "one event was pushed");
 
-    const event = window.dataLayer[0];
+    const event = pushed[0];
     assert.strictEqual(event.event, "internal_auto_link_click");
     assert.strictEqual(event.link_type, "product", "reports the entry type");
     assert.strictEqual(
@@ -121,7 +132,7 @@ acceptance("Sitemap Autolink | click analytics", function (needs) {
     assert.strictEqual(events[0][1], "internal_auto_link_click");
     assert.strictEqual(events[0][2].destination, DESTINATION);
     assert.strictEqual(
-      window.dataLayer.length,
+      autolinkEvents().length,
       0,
       "the dataLayer fallback is not used as well"
     );
@@ -132,7 +143,7 @@ acceptance("Sitemap Autolink | click analytics", function (needs) {
     await click("a.plain-link");
 
     assert.strictEqual(
-      window.dataLayer.length,
+      autolinkEvents().length,
       0,
       "ordinary links in a post are not tracked"
     );
@@ -159,7 +170,7 @@ acceptance("Sitemap Autolink | click analytics disabled", function (needs) {
     await click("a.sitemap-autolink");
 
     assert.strictEqual(
-      window.dataLayer.length,
+      autolinkEvents().length,
       0,
       "nothing is tracked when sitemap_autolink_analytics_enabled is off"
     );
