@@ -163,7 +163,7 @@ module SitemapAutolink
             @report[:errors] << "failed to fetch sitemap #{source[:url]} (unreachable or incomplete)"
             next
           end
-          entries.each do |loc, lastmod|
+          entries.each do |loc, lastmod, listed_in|
             if monotime > @deadline
               # A budget stop is PARTIAL progress, not a failure — it
               # gets its own state so real errors stay meaningful.
@@ -188,7 +188,7 @@ module SitemapAutolink
             end
             seen_urls << url
             @report[:seen] += 1
-            sync_entry(url, lastmod, source[:type], now)
+            sync_entry(url, lastmod, source[:type], now, listed_in || source[:url])
             @on_progress&.call(@report[:seen])
           end
         rescue => e
@@ -313,16 +313,19 @@ module SitemapAutolink
         end
         entries = []
         children.each do |child_loc, _lastmod|
-          child_xml = to_utf8(@http_get.call(child_loc.strip, MAX_TITLE_BYTES * 4))
+          child = child_loc.strip
+          child_xml = to_utf8(@http_get.call(child, MAX_TITLE_BYTES * 4))
           if child_xml.nil? || !complete_sitemap?(child_xml)
-            @report[:errors] << "failed to fetch child sitemap #{child_loc} (unreachable or incomplete)"
+            @report[:errors] << "failed to fetch child sitemap #{child} (unreachable or incomplete)"
             next
           end
-          entries.concat(parse_sitemap(child_xml))
+          # The document that actually listed the URL, so an admin can
+          # filter by the child sitemap and not only by the index.
+          parse_sitemap(child_xml).each { |loc, lastmod| entries << [loc, lastmod, child] }
         end
         entries
       else
-        parse_sitemap(xml)
+        parse_sitemap(xml).map { |loc, lastmod| [loc, lastmod, url] }
       end
     end
 
@@ -373,7 +376,7 @@ module SitemapAutolink
       end
     end
 
-    def sync_entry(url, lastmod, content_type, now)
+    def sync_entry(url, lastmod, content_type, now, sitemap_url = nil)
       entry = SitemapAutolinkEntry.find_by(url: url)
 
       if entry.nil?
@@ -384,6 +387,7 @@ module SitemapAutolink
             title: title,
             content_type: content_type,
             source: "sitemap",
+            sitemap_url: sitemap_url,
             title_source: title_source,
             lastmod: lastmod,
             auto_discovered: true,
@@ -395,6 +399,14 @@ module SitemapAutolink
         regenerate_terms(entry)
         @report[:added] << url
         return
+      end
+
+      # Which sitemap lists a URL can change between runs — a page moves
+      # between child sitemaps, or a source is reconfigured — and rows
+      # predating this column have none. Kept current here, on its own,
+      # so none of the title and lastmod paths below have to carry it.
+      if sitemap_url.present? && entry.sitemap_url != sitemap_url
+        entry.update_columns(sitemap_url: sitemap_url)
       end
 
       if entry.removed_from_source

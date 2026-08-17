@@ -44,6 +44,7 @@ en:
         search_placeholder: "Search keywords, titles or URLs…"
         result_summary: "%{pages} pages, %{phrases} keywords match — %{linking} of them are linking"
         review_state: "Review state:"
+        all_sitemaps: "All sitemaps"
         page_state_all: "All pages"
         page_state_live: "Live pages only"
         page_state_disabled: "Disabled pages"

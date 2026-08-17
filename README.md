@@ -289,7 +289,14 @@ searched on the server.
   So the summary line counts matching keywords and linking keywords
   separately, a card whose page is out says so plainly, and a **page
   filter** isolates live pages, disabled ones, and the ones gone from
-  the sitemap. **Bulk actions address the whole current filter**, not the cards
+  the sitemap.
+
+  Feeding the plugin several sitemaps? A **sitemap filter** narrows the
+  list to the one a page came out of — the child sitemap when the source
+  is an index, since that is the document that actually listed the URL.
+  Entries ingested before this was recorded fill it in the next time a
+  sync sees their URL, and the filter only appears once there is more
+  than nothing to choose from. **Bulk actions address the whole current filter**, not the cards
   on screen — a review queue of thousands is cleared in one confirmed
   click, and the confirmation names the exact count first. The review
   queue is this page filtered to *Awaiting review*.
@@ -314,8 +321,8 @@ A JSON management API (staff-only) backs all of it under
 `terms`, `collisions`, `overlaps`, `runs`, `sync`, `rebake` — if you
 prefer to script against it. Every list endpoint takes `page` and `q`;
 `entries` and `terms` also take `state` and `type`; `entries` also
-takes `page_state` (`live`, `disabled`, `removed`) and reports
-`linking_count` beside `state_counts`. The review queue is
+takes `page_state` (`live`, `disabled`, `removed`) and `sitemap`, and
+reports `linking_count` and `sitemaps` beside `state_counts`. The review queue is
 `entries?state=pending_review` (pages) or `terms?state=pending_review`
 (keywords).
 

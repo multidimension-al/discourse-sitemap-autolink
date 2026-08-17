@@ -61,6 +61,37 @@ RSpec.describe SitemapAutolink::SitemapSync do
       )
     report = sync.run!
     expect(report[:added]).to eq(["#{base}/shop/widget-frame-kit"])
+    # The child sitemap listed the URL, so that is what it came out of —
+    # filtering by the index would lump every child together.
+    expect(SitemapAutolinkEntry.first.sitemap_url).to eq("#{base}/sitemap-products.xml")
+  end
+
+  it "records the sitemap a URL came from, and follows it when it moves" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha"),
+    }
+    build_sync(responses).run!
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget")
+    expect(entry.sitemap_url).to eq("#{base}/sitemap-products.xml")
+
+    moved =
+      described_class.new(
+        sources: [{ url: "#{base}/sitemap-archive.xml", type: "product" }],
+        title_suffixes: [],
+        page_fetch_delay_ms: 0,
+        http_get:
+          ->(url, _max) do
+            {
+              "#{base}/sitemap-archive.xml" => sitemap_xml([["/shop/widget", nil]]),
+              "#{base}/shop/widget" => page_html("Widget Alpha"),
+            }[
+              url
+            ]
+          end,
+      )
+    moved.run!
+    expect(entry.reload.sitemap_url).to eq("#{base}/sitemap-archive.xml")
   end
 
   it "treats a sitemap index above the child cap as partial and keeps removal detection off" do

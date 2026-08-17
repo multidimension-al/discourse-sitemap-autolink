@@ -109,6 +109,10 @@ function entriesPayload() {
     per_page: 50,
     pages: 2,
     types: ["product", "wiki"],
+    sitemaps: [
+      "https://example.com/sitemap-products.xml",
+      "https://example.com/sitemap-wiki.xml",
+    ],
     state_counts: {
       auto_active: 1,
       pending_review: 1,
@@ -544,6 +548,36 @@ acceptance("Sitemap Autolink | Admin | keywords", function (needs) {
       }),
       "and the summary separates matching keywords from linking ones"
     );
+  });
+
+  test("can narrow to one of several sitemaps", async function (assert) {
+    await visit(KEYWORDS);
+
+    assert
+      .dom(".sitemap-autolink-admin__sitemap-filter option")
+      .exists({ count: 3 }, "every sitemap that produced entries, plus All");
+
+    await fillIn(
+      ".sitemap-autolink-admin__sitemap-filter",
+      "https://example.com/sitemap-wiki.xml"
+    );
+
+    const request = lastRequest("entries");
+    assert.strictEqual(
+      request.queryParams.sitemap,
+      "https://example.com/sitemap-wiki.xml"
+    );
+    assert.strictEqual(request.queryParams.page, "0");
+  });
+
+  test("hides the sitemap filter until a sync has recorded one", async function (assert) {
+    state.entries = { ...entriesPayload(), sitemaps: [] };
+
+    await visit(KEYWORDS);
+
+    assert
+      .dom(".sitemap-autolink-admin__sitemap-filter")
+      .doesNotExist("no point offering a filter with one useless option");
   });
 
   test("can isolate pages that dropped out of the sitemap", async function (assert) {

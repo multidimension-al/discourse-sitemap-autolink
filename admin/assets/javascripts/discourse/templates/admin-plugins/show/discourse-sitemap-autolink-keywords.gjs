@@ -70,6 +70,24 @@ const StateFilter = <template>
           </option>
         {{/each}}
       </select>
+      {{#if @controller.sitemaps.length}}
+        <select
+          class="sitemap-autolink-admin__sitemap-filter"
+          {{on "change" @controller.setSitemapFilter}}
+        >
+          <option value="">{{i18n
+              "sitemap_autolink.admin.all_sitemaps"
+            }}</option>
+          {{#each @controller.sitemaps as |sitemap|}}
+            <option
+              value={{sitemap}}
+              selected={{eq sitemap @controller.sitemapFilter}}
+            >
+              {{sitemap}}
+            </option>
+          {{/each}}
+        </select>
+      {{/if}}
       <select
         class="sitemap-autolink-admin__page-state-filter"
         {{on "change" @controller.setPageState}}

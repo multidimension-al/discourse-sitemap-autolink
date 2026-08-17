@@ -26,10 +26,17 @@ export default class AdminPluginsShowSitemapAutolinkKeywordsController extends C
   @tracked typeFilter = "";
   @tracked stateFilter = "";
   @tracked pageState = "";
+  @tracked sitemapFilter = "";
   @tracked page = 0;
 
   get entryTypes() {
     return this.data?.types || [];
+  }
+
+  // Empty until a sync has recorded which sitemap each URL came from,
+  // so the filter hides itself rather than offering one useless option.
+  get sitemaps() {
+    return this.data?.sitemaps || [];
   }
 
   get stateCounts() {
@@ -87,6 +94,9 @@ export default class AdminPluginsShowSitemapAutolinkKeywordsController extends C
     if (this.pageState) {
       data.page_state = this.pageState;
     }
+    if (this.sitemapFilter) {
+      data.sitemap = this.sitemapFilter;
+    }
     return data;
   }
 
@@ -117,6 +127,13 @@ export default class AdminPluginsShowSitemapAutolinkKeywordsController extends C
   @action
   setTypeFilter(event) {
     this.typeFilter = event.target.value;
+    this.page = 0;
+    this.load();
+  }
+
+  @action
+  setSitemapFilter(event) {
+    this.sitemapFilter = event.target.value;
     this.page = 0;
     this.load();
   }
@@ -173,6 +190,7 @@ export default class AdminPluginsShowSitemapAutolinkKeywordsController extends C
                 state: this.stateFilter,
                 type: this.typeFilter,
                 page_state: this.pageState,
+                sitemap: this.sitemapFilter,
               },
             },
           });

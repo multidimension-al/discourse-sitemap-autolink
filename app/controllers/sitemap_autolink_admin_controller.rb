@@ -101,6 +101,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
           id: SitemapAutolinkTerm.where(state: validated_state(params[:state])).select(:entry_id),
         )
     end
+    scope = scope.where(sitemap_url: params[:sitemap]) if params[:sitemap].present?
     scope = apply_page_state(scope, params[:page_state])
     page = current_page
     total = scope.count
@@ -112,6 +113,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
              per_page: PAGE_SIZE,
              pages: page_count(total),
              types: entry_types,
+             sitemaps: entry_sitemaps,
              # Phrase counts, not page counts: the state filters and the
              # bulk actions beside them both act on phrases, and they
              # must agree about how many.
@@ -470,6 +472,15 @@ class SitemapAutolinkAdminController < Admin::AdminController
     SitemapAutolinkEntry.distinct.order(:content_type).pluck(:content_type)
   end
 
+  # Only sitemaps that actually produced entries. Rows ingested before
+  # this was recorded have none, and appear under "all" until a sync
+  # sees their URL again.
+  def entry_sitemaps
+    SitemapAutolinkEntry.where.not(sitemap_url: nil).distinct.order(:sitemap_url).pluck(
+      :sitemap_url,
+    )
+  end
+
   def linkable_terms
     SitemapAutolinkTerm.linkable.joins(:entry).merge(SitemapAutolinkEntry.active)
   end
@@ -518,6 +529,9 @@ class SitemapAutolinkAdminController < Admin::AdminController
   def term_scope(source)
     scope = SitemapAutolinkTerm.joins(:entry)
     scope = apply_page_state(scope, source[:page_state])
+    if source[:sitemap].present?
+      scope = scope.where(sitemap_autolink_entries: { sitemap_url: source[:sitemap] })
+    end
     if source[:type].present?
       scope = scope.where(sitemap_autolink_entries: { content_type: source[:type] })
     end
@@ -618,6 +632,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
       removed_from_source: entry.removed_from_source,
       title_source: entry.title_source,
       source: entry.source,
+      sitemap_url: entry.sitemap_url,
       last_seen_at: entry.last_seen_at,
       terms:
         entry

@@ -137,6 +137,40 @@ RSpec.describe SitemapAutolinkAdminController do
       expect(response.parsed_body["entries"]).to be_empty
     end
 
+    # A site can feed the plugin several sitemaps, and "show me only the
+    # one I just changed" is not answerable by searching text.
+    it "filters by the sitemap an entry came out of" do
+      entry.update!(sitemap_url: "https://example.com/sitemap-products.xml")
+      wiki_entry.update!(sitemap_url: "https://example.com/sitemap-wiki.xml")
+
+      get "#{base}/entries"
+      expect(response.parsed_body["sitemaps"]).to eq(
+        ["https://example.com/sitemap-products.xml", "https://example.com/sitemap-wiki.xml"],
+      )
+
+      get "#{base}/entries", params: { sitemap: "https://example.com/sitemap-wiki.xml" }
+      expect(response.parsed_body["entries"].map { |e| e["id"] }).to eq([wiki_entry.id])
+    end
+
+    it "keeps a bulk change inside the sitemap filter" do
+      entry.update!(sitemap_url: "https://example.com/sitemap-products.xml")
+      entry.terms.create!(phrase: "Widget Frame Kit", origin: :generated, state: :auto_active)
+      wiki_entry.update!(sitemap_url: "https://example.com/sitemap-wiki.xml")
+      wiki_entry.terms.create!(phrase: "Gasket Lore", origin: :generated, state: :auto_active)
+
+      put "#{base}/terms/bulk",
+          params: {
+            state: "disabled",
+            filter: {
+              sitemap: "https://example.com/sitemap-wiki.xml",
+            },
+          }
+
+      expect(response.parsed_body["updated"]).to eq(1)
+      expect(wiki_entry.terms.first.reload.state).to eq("disabled")
+      expect(entry.terms.first.reload.state).to eq("auto_active")
+    end
+
     # A keyword's state says it got through review. Whether it LINKS also
     # depends on its page being live, and reporting only the state calls
     # a page that was filtered out of the sitemap "auto-active".
