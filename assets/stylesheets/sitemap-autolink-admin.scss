@@ -1,10 +1,10 @@
-// Admin catalog page.
+// Admin pages for the autolink catalog.
 //
-// The admin area is a narrow column, and everything this plugin stores
-// is wide: page titles, URLs and any number of phrases per page. Laid
-// out as table columns they fight for room and every row wraps to a
-// different height, so the page list is stacked cards and destinations
-// are shown as linked titles with the URL kept in the tooltip.
+// The admin column is narrow and everything this plugin stores is wide:
+// page titles, URLs, and any number of keywords per page. Table columns
+// fight each other for that width and every row wraps to a different
+// height, so the catalog is a list of cards — one per destination, with
+// its keywords as chips.
 .sitemap-autolink-admin {
   &__errors {
     margin: 0.5em 0 0;
@@ -18,24 +18,9 @@
     vertical-align: top;
   }
 
-  &__tabs {
-    margin: 1em 0;
-    border-bottom: 1px solid var(--primary-low);
-  }
-
-  &__tab-count {
-    margin-left: 0.25em;
-    padding: 0 0.4em;
-    border-radius: 1em;
-    background: var(--primary-low);
-    font-size: var(--font-down-2);
-  }
-
   // The filter row is the primary control of a catalog with thousands
-  // of phrases, so it stays on one line until it genuinely cannot.
-  &__keyword-search,
-  &__search,
-  &__conflict-search {
+  // of keywords, so it stays on one line until it genuinely cannot.
+  &__search {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -53,6 +38,7 @@
   &__bulk {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 0.5em;
     margin: 0 0 1em;
   }
@@ -60,6 +46,11 @@
   &__filter-count {
     margin-left: 0.4em;
     opacity: 0.7;
+  }
+
+  &__result-count {
+    margin-right: auto;
+    color: var(--primary-medium);
   }
 
   &__hint {
@@ -71,7 +62,7 @@
     color: var(--primary-medium);
   }
 
-  // A small, neutral badge: content type, phrase state, "slug", and so
+  // A small neutral badge: content type, keyword state, "slug", and so
   // on. Variants only change color, never size, so a row of them stays
   // one visual weight.
   &__pill {
@@ -114,20 +105,8 @@
     font-weight: bold;
   }
 
-  &__reason {
-    display: block;
-    color: var(--primary-medium);
-    font-size: var(--font-down-1);
-  }
-
-  &__keyword-table th:last-child,
-  &__keyword-table td:last-child {
-    white-space: nowrap;
-  }
-
-  // One card per ingested page: title (linked, with the URL as its
-  // tooltip) and type on the first line, phrase chips on the next, the
-  // add field last, and the enable/disable toggle in the top corner.
+  // One card per destination: title and type, the URL, the keywords,
+  // the field to add one, and the enable/disable toggle in the corner.
   &__entry-list {
     display: flex;
     flex-direction: column;
@@ -157,6 +136,14 @@
     overflow-wrap: anywhere;
   }
 
+  &__entry-url {
+    display: block;
+    margin-top: 0.15em;
+    color: var(--primary-medium);
+    font-size: var(--font-down-1);
+    overflow-wrap: anywhere;
+  }
+
   &__toggle-entry {
     flex: 0 0 auto;
   }
@@ -169,8 +156,8 @@
     margin: 0.6em 0;
   }
 
-  // A phrase and its remove button read as one object, so they share a
-  // chip rather than sitting as loose text next to a loose button.
+  // A keyword and its buttons read as one object, so they share a chip
+  // rather than sitting as loose text next to loose buttons.
   &__term {
     display: inline-flex;
     align-items: center;
@@ -191,6 +178,10 @@
     .btn {
       padding: 0.15em 0.3em;
     }
+
+    .sitemap-autolink-admin__pill {
+      margin-left: 0.25em;
+    }
   }
 
   &__no-terms {
@@ -208,13 +199,21 @@
     }
   }
 
-  &__collision {
+  &__collision,
+  &__overlap {
     margin-bottom: 0.75em;
+    padding-bottom: 0.75em;
+    border-bottom: 1px solid var(--primary-very-low);
   }
 
   &__candidate,
   &__covering {
     padding-left: 1em;
+    overflow-wrap: anywhere;
+
+    &.is-inactive {
+      color: var(--primary-medium);
+    }
   }
 
   &__candidate.is-winner {

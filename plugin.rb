@@ -60,12 +60,15 @@ after_initialize do
   end
 
   Discourse::Application.routes.append do
-    # Full-page load of the custom admin page: core only routes
+    # Full-page load of the custom admin pages: core only routes
     # /admin/plugins/:plugin_id and .../settings, so each custom page
     # URL needs an explicit Rails route rendering the app shell (same
-    # pattern as discourse-subscriptions).
-    get "/admin/plugins/discourse-sitemap-autolink/catalog" => "admin/plugins#index",
-        :constraints => StaffConstraint.new
+    # pattern as discourse-subscriptions). "catalog" is the single page
+    # these four replaced; its Ember route redirects to the overview.
+    %w[overview keywords conflicts logs catalog].each do |page|
+      get "/admin/plugins/discourse-sitemap-autolink/#{page}" => "admin/plugins#index",
+          :constraints => StaffConstraint.new
+    end
 
     # JSON management API. Deliberately NOT inside `namespace :admin` —
     # that would resolve the controller as Admin::…; the controller is a

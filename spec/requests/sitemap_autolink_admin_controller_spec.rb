@@ -89,11 +89,46 @@ RSpec.describe SitemapAutolinkAdminController do
       expect(response.parsed_body["total"]).to eq(0)
     end
 
-    it "restricts to entries with phrases awaiting review" do
+    it "restricts to entries with phrases in a given state" do
       entry.terms.create!(phrase: "Kit", origin: :generated, state: :pending_review)
 
-      get "#{base}/entries", params: { pending: "true" }
+      get "#{base}/entries", params: { state: "pending_review" }
       expect(response.parsed_body["entries"].map { |e| e["id"] }).to eq([entry.id])
+    end
+
+    # The keyword an admin remembers is the way they look for the page
+    # that owns it, so the search has to reach into phrases.
+    it "finds a page by one of its keywords" do
+      entry.terms.create!(phrase: "Foreman Widget", origin: :manual, state: :approved)
+
+      get "#{base}/entries", params: { q: "foreman" }
+      expect(response.parsed_body["entries"].map { |e| e["id"] }).to eq([entry.id])
+    end
+
+    it "counts phrases by state across the search, for the filters beside it" do
+      entry.terms.create!(phrase: "Kit", origin: :generated, state: :pending_review)
+      entry.terms.create!(phrase: "Widget Frame Kit", origin: :manual, state: :approved)
+
+      get "#{base}/entries"
+      expect(response.parsed_body["state_counts"]).to eq(
+        "auto_active" => 0,
+        "pending_review" => 1,
+        "approved" => 1,
+        "disabled" => 0,
+      )
+    end
+
+    # A keyword two pages fight over is marked where it is read, not
+    # only in a report the admin has to go looking for.
+    it "marks a phrase another page also claims" do
+      entry.terms.create!(phrase: "Widget Frame Kit", origin: :manual, state: :approved)
+      entry.terms.create!(phrase: "Frame Kit", origin: :manual, state: :approved)
+      wiki_entry.terms.create!(phrase: "Frame Kit", origin: :manual, state: :approved)
+
+      get "#{base}/entries", params: { type: "product" }
+      terms = response.parsed_body["entries"].first["terms"].index_by { |t| t["phrase"] }
+      expect(terms["Frame Kit"]["duplicate"]).to eq(true)
+      expect(terms["Widget Frame Kit"]["duplicate"]).to eq(false)
     end
 
     it "pages past the end without erroring" do
@@ -398,13 +433,39 @@ RSpec.describe SitemapAutolinkAdminController do
       expect(collision["winner"]).to be_present
     end
 
-    # A disabled entry is not competing for the phrase, so it must not
-    # show up as a candidate — or the report invents a conflict.
-    it "ignores entries that are no longer active" do
+    # Scoping DETECTION to active entries made the report disagree with
+    # the catalog on screen: pages visibly claiming the same phrase were
+    # reported as no conflict at all. Report it, and say which of them
+    # is actually in the fight.
+    it "still reports a phrase whose rival is disabled, marked not linking" do
       rival.update!(enabled: false)
       SitemapAutolink::Catalog.bump_version!
 
       get "#{base}/collisions"
+      collision = response.parsed_body["collisions"].first
+      expect(collision["phrase"]).to eq("widget frame kit")
+      expect(collision["linking_candidates"]).to eq(1)
+      expect(collision["candidates"].map { |c| [c["url"], c["linking"]] }).to contain_exactly(
+        [entry.url, true],
+        [rival.url, false],
+      )
+      expect(response.parsed_body["competing"]).to eq(0)
+    end
+
+    it "reports a phrase whose claimants are all awaiting review" do
+      SitemapAutolinkTerm.update_all(state: SitemapAutolinkTerm.states[:pending_review])
+      SitemapAutolink::Catalog.bump_version!
+
+      get "#{base}/collisions"
+      expect(response.parsed_body["collisions"].first["phrase"]).to eq("widget frame kit")
+      expect(response.parsed_body["collisions"].first["linking_candidates"]).to eq(0)
+    end
+
+    it "narrows to live contests on request" do
+      rival.update!(enabled: false)
+      SitemapAutolink::Catalog.bump_version!
+
+      get "#{base}/collisions", params: { only_competing: "true" }
       expect(response.parsed_body["collisions"]).to be_empty
     end
 
