@@ -437,7 +437,14 @@ manually if you want a spotless database.
 
 ```sh
 # in a Discourse checkout with the plugin cloned into plugins/
+
+# server-side specs (linking pipeline, sync, jobs, admin API):
 LOAD_PLUGINS=1 bin/rspec plugins/discourse-sitemap-autolink/spec
+
+# JavaScript acceptance tests (admin catalog page, click analytics):
+bin/rake plugin:qunit['discourse-sitemap-autolink']
+# …or in a browser, against a running dev server:
+#   /tests?target=discourse-sitemap-autolink
 
 # dependency-free checks (plain Ruby + nokogiri, no Discourse needed):
 ruby script/local_check.rb          # matcher + HTML applier behavior
@@ -451,6 +458,21 @@ ruby script/preview_sync.rb --source "https://example.com/sitemap.xml,content" -
 contract: creation, editing, rebake applies/removes/retargets links,
 per-post limits, quote/code/existing-link safety, category exclusions,
 pending-review gating, and type restrictions.
+
+`test/javascripts/acceptance/` covers the front end the same way, with
+the plugin's JSON endpoints stubbed by pretender:
+
+- `sitemap-autolink-admin-test.js` — the catalog page end to end: the
+  nav tab the plugin registers, status/history/review-queue/entries
+  rendering, syncing and cancelling, dry-run preview, the confirmed
+  rebake wave, approving phrases one at a time and in bulk, search,
+  filters, pagination, enabling/disabling entries and phrases, adding a
+  manual alias, and the warnings shown for a misconfigured or
+  unreachable catalog.
+- `sitemap-autolink-analytics-test.js` — the optional GA4 tracking:
+  clicking a generated link reports its type, phrase, destination and
+  post; ordinary links and a disabled
+  `sitemap_autolink_analytics_enabled` report nothing.
 
 ## License
 

@@ -32,6 +32,14 @@ export default class AdminPluginsShowSitemapAutolinkCatalogController extends Co
   #pollCount = 0;
   #pollTimer = null;
 
+  // Controllers are singletons that outlive the page: without this a
+  // sync poll scheduled here keeps firing (and re-rendering) long after
+  // the admin has navigated away.
+  willDestroy() {
+    super.willDestroy(...arguments);
+    clearTimeout(this.#pollTimer);
+  }
+
   get entryTypes() {
     return this.entriesData?.types || [];
   }
