@@ -136,6 +136,16 @@ HTML
   problems
 end
 
+check "unsafe rule URLs never become links", <<~HTML, rules: [{ phrase: "evil widget", url: "javascript:alert(1)", type: "product", priority: 1 }, { phrase: "safe widget", url: "https://example.com/safe-widget", type: "product", priority: 1 }] do |html, inserted|
+  <p>An evil widget next to a safe widget.</p>
+HTML
+  problems = []
+  problems << "expected 1 link, got #{inserted}" if inserted != 1
+  problems << "javascript: href emitted into HTML" if html.include?("javascript:")
+  problems << "safe rule missing" unless html.include?("/safe-widget")
+  problems
+end
+
 if $failures.zero?
   puts "\nall local checks passed"
 else

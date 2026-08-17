@@ -17,10 +17,12 @@ module SitemapAutolink
   #     type: "product",
   #     priority: 1 }                   # lower wins ties
   class Matcher
-    # Characters treated as word boundaries.
+    # Characters treated as word boundaries. NBSP is written as an
+    # escape: a literal one is indistinguishable from a plain space in
+    # an editor and has already been silently "fixed" into U+0020 once.
     BOUNDARY_CHARS =
       [
-        " ", "\t", "\n", "\r", " ",
+        " ", "\t", "\n", "\r", "\u00A0",
         ":", ".", ";", ",", "!", "?", "…",
         "(", ")", "[", "]", "{", "}",
         "\"", "„", "“", "”", "«", "»",
@@ -37,7 +39,7 @@ module SitemapAutolink
     # per-character downcasing, keeping any character whose downcase is
     # not a single character.
     def self.normalize(text)
-      folded = text.tr("’‘ ", "'' ")
+      folded = text.tr("’‘\u00A0", "'' ")
       down = folded.downcase
       return down if down.length == folded.length
 

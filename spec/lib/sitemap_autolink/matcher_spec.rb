@@ -14,6 +14,11 @@ RSpec.describe SitemapAutolink::Matcher do
       expect(described_class.normalize("Foreman’s Field Guide")).to eq("foreman's field guide")
       expect(described_class.normalize("Foreman’s").length).to eq("Foreman’s".length)
     end
+
+    it "folds non-breaking spaces to plain spaces, preserving length" do
+      expect(described_class.normalize("Widget\u00A0Kit")).to eq("widget kit")
+      expect(described_class.normalize("a\u00A0b").length).to eq(3)
+    end
   end
 
   describe "#scan" do
@@ -38,6 +43,11 @@ RSpec.describe SitemapAutolink::Matcher do
       rules = [rule("widget kit", "/a"), rule("deluxe widget kit", "/b")]
       found = scan(rules, "A deluxe widget kit here.")
       expect(found.map { |c| c[:rule][:url] }).to contain_exactly("/a", "/b")
+    end
+
+    it "matches phrases whose words are separated by non-breaking spaces" do
+      found = scan([rule("widget kit", "/a")], "my widget\u00A0kit here")
+      expect(found.size).to eq(1)
     end
   end
 

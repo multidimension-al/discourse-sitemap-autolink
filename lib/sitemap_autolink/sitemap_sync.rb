@@ -163,7 +163,10 @@ module SitemapAutolink
             end
             url = SitemapAutolinkEntry.normalize_url(loc)
             next if url.empty? || seen_urls.include?(url)
-            if UrlFilter.excluded?(url, @url_filter)
+            # The sitemap protocol only allows absolute http(s) <loc>
+            # values; anything else (javascript:, data:, ftp:, …) is
+            # malformed or malicious and must never enter the catalog.
+            if !url.match?(%r{\Ahttps?://}i) || UrlFilter.excluded?(url, @url_filter)
               @report[:excluded] += 1
               next
             end
@@ -262,7 +265,17 @@ module SitemapAutolink
       xml = to_utf8(@http_get.call(url, MAX_TITLE_BYTES * 4))
       return nil if xml.nil? || !complete_sitemap?(xml)
       if xml =~ /<sitemapindex[\s>]/i
-        children = parse_sitemap(xml).first(MAX_INDEX_CHILDREN)
+        children = parse_sitemap(xml)
+        if children.size > MAX_INDEX_CHILDREN
+          # A capped child list is INCOMPLETE coverage: on a clean run
+          # mark_removed would disable every entry that lives only in
+          # the dropped children. Partial keeps removal decisions off.
+          @report[:partial] = true
+          @report[:notes] << "sitemap index #{url} lists #{children.size} child sitemaps; " \
+            "only the first #{MAX_INDEX_CHILDREN} were processed (entries beyond the cap " \
+            "keep their current state)"
+          children = children.first(MAX_INDEX_CHILDREN)
+        end
         entries = []
         children.each do |child_loc, _lastmod|
           child_xml = to_utf8(@http_get.call(child_loc.strip, MAX_TITLE_BYTES * 4))
@@ -512,10 +525,19 @@ module SitemapAutolink
       parts.empty? ? nil : parts.join(", ")
     end
 
+    # The attribute value ends at the SAME quote character that opened
+    # it: content="Foreman's Field Guide" legitimately contains an
+    # apostrophe, content='He said "now"' a double quote. Matching
+    # either quote kind as the terminator ([^"']) truncated such titles
+    # at the embedded quote ("Foreman's…" ingested as "Foreman").
+    OG_TITLE_PROPERTY_FIRST =
+      /<meta[^>]+property=["']og:title["'][^>]+content=(["'])((?:(?!\1).)+)\1/im
+    OG_TITLE_CONTENT_FIRST =
+      /<meta[^>]+content=(["'])((?:(?!\1).)+)\1[^>]+property=["']og:title["']/im
+
     def title_from_html(html)
       raw =
-        html[/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i, 1] ||
-          html[/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i, 1] ||
+        html[OG_TITLE_PROPERTY_FIRST, 2] || html[OG_TITLE_CONTENT_FIRST, 2] ||
           html[%r{<title[^>]*>([^<]+)</title>}i, 1]
       return nil if raw.nil?
       clean_title(CGI.unescapeHTML(raw))
