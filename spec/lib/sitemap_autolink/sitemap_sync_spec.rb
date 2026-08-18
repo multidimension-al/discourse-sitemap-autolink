@@ -157,6 +157,23 @@ RSpec.describe SitemapAutolink::SitemapSync do
     )
   end
 
+  # Pruning asks the database for memberships older than this run's
+  # timestamp. Time.zone.now carries nanosecond digits the column cannot
+  # store, so an untruncated stamp makes every row the run just wrote
+  # compare as older than itself — and the prune wipes the lot.
+  it "keeps memberships through a run that changed nothing" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha"),
+    }
+    build_sync(responses).run!
+    build_sync(responses).run!
+
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget")
+    expect(entry.sitemaps.pluck(:url)).to eq(["#{base}/sitemap-products.xml"])
+    expect(entry.removed_from_source).to be(false)
+  end
+
   it "drops only the membership a URL lost when it leaves one of its sitemaps" do
     responses = {
       "#{base}/sitemap.xml" => "<?xml version=\"1.0\"?><sitemapindex>" \
