@@ -96,6 +96,34 @@ export default class AdminPluginsShowSitemapAutolinkSitemapsController extends C
   // Two separate ways to stop: keep the pages (they go to "gone from
   // sitemap" and come back if the sitemap is re-enabled) or delete them.
   // A single confirm cannot ask a question with three answers.
+  // Purging one sitemap's dead pages without leaving the page that
+  // shows you how many there are. The same thing is reachable from
+  // Keywords by combining the sitemap and "gone from sitemap" filters —
+  // this is just the short way round.
+  @action
+  purgeGone(sitemap) {
+    if (!sitemap.gone_entries) {
+      return;
+    }
+    this.dialog.yesNoConfirm({
+      message: i18n("sitemap_autolink.admin.purge_sitemap_gone_confirm", {
+        url: sitemap.url,
+        count: sitemap.gone_entries,
+      }),
+      didConfirm: async () => {
+        try {
+          await ajax(`${BASE}/entries/purge`, {
+            type: "DELETE",
+            data: { filter: { sitemap: sitemap.url } },
+          });
+          await this.load();
+        } catch (e) {
+          popupAjaxError(e);
+        }
+      },
+    });
+  }
+
   @action
   stopImporting(sitemap) {
     this.dialog.yesNoConfirm({

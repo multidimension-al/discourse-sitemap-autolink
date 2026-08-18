@@ -60,6 +60,12 @@ en:
         sitemap_imported: "%{count} imported (%{gone} gone)"
         import_sitemap: "Import this sitemap"
         ignore_sitemap: "Ignore"
+        purge_sitemap_gone:
+          one: "Delete %{count} gone page"
+          other: "Delete %{count} gone pages"
+        purge_sitemap_gone_confirm:
+          one: "Permanently delete the %{count} page from %{url} that is gone from the sitemap, with all of its keywords? This cannot be undone."
+          other: "Permanently delete all %{count} pages from %{url} that are gone from the sitemap, with all of their keywords? This cannot be undone."
         stop_importing: "Stop importing"
         stop_and_purge: "Stop and delete its pages"
         stop_importing_confirm: "Stop importing %{url}? Its %{count} live pages are kept but marked gone from the sitemap, so they stop linking. Re-import the sitemap to bring them back."

@@ -123,6 +123,16 @@ const UrlCount = <template>
 
             {{#unless (eq sitemap.kind "index")}}
               <div class="sitemap-autolink-admin__sitemap-actions">
+                {{#if sitemap.gone_entries}}
+                  <DButton
+                    @translatedLabel={{i18n
+                      "sitemap_autolink.admin.purge_sitemap_gone"
+                      count=sitemap.gone_entries
+                    }}
+                    @action={{fn @controller.purgeGone sitemap}}
+                    class="btn-small btn-danger sitemap-autolink-admin__purge-sitemap-gone"
+                  />
+                {{/if}}
                 {{#if (eq sitemap.status "enabled")}}
                   {{#unless sitemap.configured}}
                     <DButton

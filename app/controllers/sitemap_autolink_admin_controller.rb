@@ -332,12 +332,25 @@ class SitemapAutolinkAdminController < Admin::AdminController
     render json: success_json.merge(purged: purged)
   end
 
-  # Purge one page, from its card. Any page may be deleted this way, not
-  # only a vanished one — but a page still listed in a sitemap comes
-  # straight back on the next sync, so the UI only offers it where it
-  # means something.
+  # Purge one page, from its card.
+  #
+  # Only a page that is GONE from the sitemap may be deleted. A page
+  # still listed in one would be re-ingested by the next sync, so
+  # deleting it is not a thing that can succeed — the honest control for
+  # a live page is Disable, and the API says so rather than performing a
+  # deletion that quietly undoes itself.
   def destroy_entry
     entry = SitemapAutolinkEntry.find(params[:id])
+    if !entry.removed_from_source
+      render json:
+               failed_json.merge(
+                 error:
+                   "#{entry.url} is still listed in a sitemap — disable it instead. " \
+                     "Only pages gone from the sitemap can be deleted.",
+               ),
+             status: :unprocessable_content
+      return
+    end
     purge_entry_ids!([entry.id])
     bump
     render json: success_json

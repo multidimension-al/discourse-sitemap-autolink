@@ -834,6 +834,24 @@ RSpec.describe SitemapAutolinkAdminController do
       expect(response.status).to eq(200)
       expect(SitemapAutolinkEntry.exists?(gone_entry.id)).to eq(false)
     end
+
+    # Deleting a page that is still listed in a sitemap cannot succeed:
+    # the next sync ingests it straight back. Disabling is the control
+    # that actually holds, so the API refuses rather than performing a
+    # deletion that quietly undoes itself.
+    it "refuses to delete a page that is still in a sitemap" do
+      delete "#{base}/entries/#{entry.id}"
+      expect(response.status).to eq(422)
+      expect(response.parsed_body["error"]).to include("disable it instead")
+      expect(SitemapAutolinkEntry.exists?(entry.id)).to eq(true)
+    end
+
+    it "refuses even when the page is merely disabled" do
+      entry.update!(enabled: false)
+      delete "#{base}/entries/#{entry.id}"
+      expect(response.status).to eq(422)
+      expect(SitemapAutolinkEntry.exists?(entry.id)).to eq(true)
+    end
   end
 
   describe "#runs" do

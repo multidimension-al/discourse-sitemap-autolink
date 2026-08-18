@@ -295,6 +295,10 @@ searched on the server.
   `sitemap_autolink_auto_import_new_sitemaps` restores the old
   import-everything behaviour if you want it.
 
+  Rows carrying pages that vanished offer to **delete those pages**
+  right there, which is the short way round to the same sitemap-scoped
+  purge the Keywords filters give you.
+
   Stopping an import asks which you meant: **Stop importing** keeps the
   pages (they become *gone from sitemap*, stop linking, and return if
   you re-import), while **Stop and delete its pages** purges everything
@@ -336,8 +340,12 @@ searched on the server.
   keywords are forgotten entirely, so a URL that does turn up again is
   ingested as a page the plugin has never seen. The button appears only
   when there are such pages, names the count, and respects the current
-  search, type and sitemap filters; single pages have their own delete
-  button on the card. **Bulk actions address the whole current filter**, not the cards
+  search, type and sitemap filters — so combining the sitemap filter
+  with **Gone from sitemap** purges one sitemap's dead pages and nothing
+  else. Single pages have their own delete button on the card. Deletion
+  is only ever offered for pages that are gone: a page still listed in a
+  sitemap would be re-ingested by the next sync, so the API refuses to
+  delete one and the honest control for it is **Disable**. **Bulk actions address the whole current filter**, not the cards
   on screen — a review queue of thousands is cleared in one confirmed
   click, and the confirmation names the exact count first. The review
   queue is this page filtered to *Awaiting review*.

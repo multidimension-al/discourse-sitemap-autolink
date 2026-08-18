@@ -909,6 +909,11 @@ acceptance("Sitemap Autolink | Admin | sitemaps", function (needs) {
       record("discover", request, helper);
       return helper.response({ success: "OK", errors: [], notes: [] });
     });
+
+    server.delete(`${BASE}/entries/purge`, (request) => {
+      record("purge", request, helper);
+      return helper.response({ success: "OK", purged: 2 });
+    });
   });
 
   // Naming an index in a setting says nothing about which of the
@@ -990,6 +995,36 @@ acceptance("Sitemap Autolink | Admin | sitemaps", function (needs) {
       "true",
       "the destructive one asks for the pages to be deleted"
     );
+  });
+
+  // Dead pages accumulate per sitemap, and the row that reports the
+  // count is the natural place to act on it.
+  test("purges one sitemap's gone pages from its own row", async function (assert) {
+    await visit(SITEMAPS);
+
+    const importing = ".sitemap-autolink-admin__sitemap[data-sitemap-id='2']";
+    await click(`${importing} .sitemap-autolink-admin__purge-sitemap-gone`);
+    await click(".dialog-footer .btn-primary");
+
+    // Either transport is fine (jQuery puts DELETE data in the body,
+    // but the URL is checked too); what matters is the scoping.
+    const purge = lastRequest("purge");
+    assert.true(
+      decodeURIComponent(`${purge.url} ${purge.raw || ""}`).includes(
+        "filter[sitemap]=https://example.com/sitemap-products.xml"
+      ),
+      "scoped to that sitemap, not the whole catalog"
+    );
+  });
+
+  test("offers no delete on a sitemap with nothing gone", async function (assert) {
+    await visit(SITEMAPS);
+
+    assert
+      .dom(
+        ".sitemap-autolink-admin__sitemap[data-sitemap-id='3'] .sitemap-autolink-admin__purge-sitemap-gone"
+      )
+      .doesNotExist();
   });
 
   test("reads the configured sitemaps on demand", async function (assert) {
