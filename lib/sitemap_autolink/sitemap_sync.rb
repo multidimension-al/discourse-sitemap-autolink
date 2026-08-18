@@ -157,7 +157,7 @@ module SitemapAutolink
     # Never raises: any failure lands in report[:errors] so the sync-run
     # audit row always records what happened, including partial progress.
     def run!
-      now = run_timestamp
+      now = Time.zone.now
       seen_urls = Set.new
       @deadline = monotime + @time_budget_minutes * 60
       stop_early = false
@@ -431,7 +431,7 @@ module SitemapAutolink
     # what the admin Sitemaps page runs so an index's children can be
     # seen (and counted) before anything is decided about them.
     def discover!
-      now = run_timestamp
+      now = Time.zone.now
       deadline = monotime + DISCOVERY_BUDGET_SECONDS
       # An explicit read refreshes the counts it already has; a sitemap
       # grows between the day it was discovered and the day somebody
@@ -639,17 +639,6 @@ module SitemapAutolink
     # must lose only that membership. Only sitemaps this run read END TO
     # END are pruned — a sitemap that failed to fetch tells us nothing
     # about what it no longer contains.
-    # Truncated to whole microseconds, which is what the datetime columns
-    # store. Membership pruning asks the database for rows older than
-    # this exact value, and Time.zone.now carries NANOsecond digits that
-    # do not survive the write — so an untruncated stamp makes every row
-    # the run just wrote compare as older than itself, and the prune
-    # deletes the entire catalog's memberships on every sync.
-    def run_timestamp
-      now = Time.zone.now
-      now.change(usec: now.usec)
-    end
-
     def prune_memberships(now)
       return if @fetched_sitemap_ids.empty?
       # Every membership observed this run was stamped with `now`, so

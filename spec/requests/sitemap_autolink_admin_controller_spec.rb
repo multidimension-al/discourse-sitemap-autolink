@@ -673,6 +673,15 @@ RSpec.describe SitemapAutolinkAdminController do
       )
     end
 
+    # The admin PAGE also lives under .../sitemaps, and page routes are
+    # registered first, so a JSON endpoint named plainly "sitemaps" is
+    # answered with the admin SPA shell instead — silently, with a 200.
+    it "answers with JSON, not the admin page shell" do
+      get "#{base}/sitemaps/list"
+      expect(response.status).to eq(200)
+      expect(response.media_type).to eq("application/json")
+    end
+
     it "lists each configured source with the children found inside it" do
       index = list_in(nil, "https://example.com/sitemap.xml", kind: "index", configured: true)
       child = list_in(entry, "https://example.com/sitemap-products.xml")
@@ -680,7 +689,7 @@ RSpec.describe SitemapAutolinkAdminController do
       waiting = list_in(nil, "https://example.com/sitemap-tags.xml", status: "pending")
       waiting.update!(parent_url: index.url, url_count: 41_000, url_count_partial: true)
 
-      get "#{base}/sitemaps"
+      get "#{base}/sitemaps/list"
       body = response.parsed_body
       expect(body["pending"]).to eq(1)
       # The index first, then its own children beneath it.

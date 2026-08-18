@@ -46,7 +46,7 @@ export default class AdminPluginsShowSitemapAutolinkSitemapsController extends C
   @action
   async load() {
     this.loading = true;
-    const result = await catalogGet("sitemaps");
+    const result = await catalogGet("sitemaps/list");
     this.loading = false;
     this.pluginDisabled = !!result.pluginDisabled;
     this.loadFailed = !!result.failed;

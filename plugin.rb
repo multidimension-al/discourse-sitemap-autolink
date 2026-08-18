@@ -93,7 +93,13 @@ after_initialize do
       delete "entries/purge" => "sitemap_autolink_admin#purge_entries"
       put "entries/:id" => "sitemap_autolink_admin#update_entry"
       delete "entries/:id" => "sitemap_autolink_admin#destroy_entry"
-      get "sitemaps" => "sitemap_autolink_admin#sitemaps"
+      # "sitemaps/list", not "sitemaps": the admin PAGE lives at
+      # /admin/plugins/discourse-sitemap-autolink/sitemaps and is
+      # registered above, earlier in this block, so a bare "sitemaps"
+      # here never gets reached — the page route answers first and hands
+      # back the admin SPA shell instead of JSON. The nested paths below
+      # have an extra segment and so do not collide.
+      get "sitemaps/list" => "sitemap_autolink_admin#sitemaps"
       post "sitemaps/discover" => "sitemap_autolink_admin#discover_sitemaps"
       put "sitemaps/:id" => "sitemap_autolink_admin#update_sitemap"
       get "terms" => "sitemap_autolink_admin#terms"

@@ -412,7 +412,7 @@ function stubReads(server, helper, { status } = {}) {
     return helper.response(state.collisions);
   });
   server.get(`${BASE}/overlaps`, () => helper.response(state.overlaps));
-  server.get(`${BASE}/sitemaps`, (request) => {
+  server.get(`${BASE}/sitemaps/list`, (request) => {
     record("sitemaps", request, helper);
     return helper.response(state.sitemaps);
   });

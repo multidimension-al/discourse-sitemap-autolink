@@ -14,7 +14,7 @@
 #   DELETE /admin/plugins/discourse-sitemap-autolink/terms/:id
 #   DELETE /admin/plugins/discourse-sitemap-autolink/entries/purge  (filter[…]=)
 #   DELETE /admin/plugins/discourse-sitemap-autolink/entries/:id  (purge one)
-#   GET    /admin/plugins/discourse-sitemap-autolink/sitemaps
+#   GET    /admin/plugins/discourse-sitemap-autolink/sitemaps/list
 #   PUT    /admin/plugins/discourse-sitemap-autolink/sitemaps/:id (status=)
 #   POST   /admin/plugins/discourse-sitemap-autolink/sitemaps/discover
 #   GET    /admin/plugins/discourse-sitemap-autolink/collisions?q=&page=
