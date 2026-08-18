@@ -275,6 +275,53 @@ RSpec.describe SitemapAutolink::SitemapSync do
     expect(SitemapAutolinkSitemap.find_by(url: "#{base}/sitemap-products.xml").url_count).to eq(2)
   end
 
+  # A sitemap grows between the day it is discovered and the day
+  # somebody decides about it, and the count is what they decide on.
+  it "refreshes the count of a waiting sitemap on an explicit read, but not on a sync" do
+    responses = {
+      "#{base}/sitemap.xml" =>
+        "<?xml version=\"1.0\"?><sitemapindex><sitemap><loc>#{base}/sitemap-tags.xml</loc></sitemap></sitemapindex>",
+      "#{base}/sitemap-tags.xml" => sitemap_xml([["/tag/one", nil]]),
+    }
+    index_sync(responses).run!
+    waiting = SitemapAutolinkSitemap.find_by(url: "#{base}/sitemap-tags.xml")
+    expect(waiting.url_count).to eq(1)
+
+    responses["#{base}/sitemap-tags.xml"] = sitemap_xml([["/tag/one", nil], ["/tag/two", nil]])
+
+    # A sync leaves it alone: re-reading sitemaps nobody wants is the
+    # cost the opt-in exists to avoid.
+    index_sync(responses).run!
+    expect(waiting.reload.url_count).to eq(1)
+
+    index_sync(responses).discover!
+    expect(waiting.reload.url_count).to eq(2)
+  end
+
+  it "stops calling a sitemap configured once it leaves the setting" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha"),
+    }
+    build_sync(responses).run!
+    expect(SitemapAutolinkSitemap.find_by(url: "#{base}/sitemap-products.xml").configured).to be(
+      true,
+    )
+
+    described_class.new(
+      sources: [{ url: "#{base}/sitemap-other.xml", type: "product" }],
+      title_suffixes: [],
+      page_fetch_delay_ms: 0,
+      http_get: ->(url, _max) { { "#{base}/sitemap-other.xml" => sitemap_xml([]) }[url] },
+    ).run!
+
+    # Configured sources are the ones the admin is given no way to turn
+    # off, so a stale flag would leave this one stuck.
+    expect(SitemapAutolinkSitemap.find_by(url: "#{base}/sitemap-products.xml").configured).to be(
+      false,
+    )
+  end
+
   it "treats a sitemap index above the child cap as partial and keeps removal detection off" do
     responses = {
       "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),

@@ -151,6 +151,7 @@ module SitemapAutolink
       @seen_memberships = Set.new
       @fetched_sitemap_ids = Set.new
       @entry_ids_by_url = {}
+      @force_measure = false
     end
 
     # Never raises: any failure lands in report[:errors] so the sync-run
@@ -172,6 +173,7 @@ module SitemapAutolink
         @report[:errors] << "no sitemap sources configured — nothing to sync " \
           "(set sitemap_autolink_sources)"
       end
+      forget_unconfigured_sources!
 
       @sources.each do |source|
         break if stop_early
@@ -431,6 +433,11 @@ module SitemapAutolink
     def discover!
       now = Time.zone.now
       deadline = monotime + DISCOVERY_BUDGET_SECONDS
+      # An explicit read refreshes the counts it already has; a sitemap
+      # grows between the day it was discovered and the day somebody
+      # decides about it.
+      @force_measure = true
+      forget_unconfigured_sources!
       @sources.each do |source|
         break if monotime > deadline
         begin
@@ -486,7 +493,11 @@ module SitemapAutolink
     # admin approving or ignoring it needs that number, and re-reading it
     # on every sync would be the very cost they are trying to avoid.
     def measure_sitemap(child, now:, persist:)
-      return if child.last_fetched_at.present?
+      # Measured once and then left alone: re-reading a sitemap nobody
+      # has decided about on every sync is exactly the cost the opt-in
+      # exists to avoid. An admin explicitly asking to read the sitemaps
+      # does want fresh counts, so discovery forces it.
+      return if child.last_fetched_at.present? && !@force_measure
       xml = to_utf8(@http_get.call(child.url, MAX_SITEMAP_BYTES))
       if xml.nil?
         touch_sitemap(child, now: now, persist: persist, error: "unreachable")
@@ -562,7 +573,12 @@ module SitemapAutolink
       changes[:content_type] = content_type if content_type.present? &&
         record.content_type != content_type
       changes[:parent_url] = parent_url if record.parent_url != parent_url
-      changes[:configured] = configured if record.configured != configured
+      # Only the source pass owns this flag. A URL that is both a
+      # configured source and listed inside somebody's index would
+      # otherwise have it flipped off by whichever pass ran last.
+      # Sources dropped from the setting are cleared by
+      # forget_unconfigured_sources! instead.
+      changes[:configured] = true if configured && !record.configured
       # Re-typing a configured source into the setting re-approves it.
       if configured && record.status != SitemapAutolinkSitemap::ENABLED
         changes[:status] = SitemapAutolinkSitemap::ENABLED
@@ -582,6 +598,18 @@ module SitemapAutolink
       attrs[:last_error] = changes[:error]
       record.update_columns(attrs)
       record
+    end
+
+    # A sitemap the setting no longer names is not a configured source
+    # any more, whatever it was last time. Without this it would keep
+    # claiming to be one — and configured sources are the ones the admin
+    # is not offered a way to turn off, so it would be stuck.
+    def forget_unconfigured_sources!
+      return if @sources.empty?
+      urls = @sources.map { |source| SitemapAutolinkSitemap.normalize_url(source[:url]) }
+      SitemapAutolinkSitemap.where(configured: true).where.not(url: urls).update_all(
+        configured: false,
+      )
     end
 
     def new_children_auto_imported?
