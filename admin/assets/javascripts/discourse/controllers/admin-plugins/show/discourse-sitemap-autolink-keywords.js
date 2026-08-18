@@ -25,10 +25,18 @@ export default class AdminPluginsShowSitemapAutolinkKeywordsController extends C
   @tracked query = "";
   @tracked typeFilter = "";
   @tracked stateFilter = "";
+  @tracked pageState = "";
+  @tracked sitemapFilter = "";
   @tracked page = 0;
 
   get entryTypes() {
     return this.data?.types || [];
+  }
+
+  // Empty until a sync has recorded which sitemap each URL came from,
+  // so the filter hides itself rather than offering one useless option.
+  get sitemaps() {
+    return this.data?.sitemaps || [];
   }
 
   get stateCounts() {
@@ -53,6 +61,21 @@ export default class AdminPluginsShowSitemapAutolinkKeywordsController extends C
       : this.totalPhrases;
   }
 
+  // A keyword's state says it passed review; whether it links also
+  // depends on its page. The two come apart the moment a page is
+  // disabled or drops out of the sitemap, so the page says both.
+  get linkingCount() {
+    return this.data?.linking_count || 0;
+  }
+
+  // Pages that vanished from the sitemap and are still being kept.
+  // They never link, so they are dead weight in a catalog that has been
+  // re-pointed at different sitemaps — and until now there was no way
+  // to be rid of them.
+  get gonePages() {
+    return this.data?.gone_pages || 0;
+  }
+
   get pageDisplay() {
     return `${this.page + 1} / ${Math.max(this.data?.pages || 1, 1)}`;
   }
@@ -75,6 +98,12 @@ export default class AdminPluginsShowSitemapAutolinkKeywordsController extends C
     }
     if (this.stateFilter) {
       data.state = this.stateFilter;
+    }
+    if (this.pageState) {
+      data.page_state = this.pageState;
+    }
+    if (this.sitemapFilter) {
+      data.sitemap = this.sitemapFilter;
     }
     return data;
   }
@@ -106,6 +135,20 @@ export default class AdminPluginsShowSitemapAutolinkKeywordsController extends C
   @action
   setTypeFilter(event) {
     this.typeFilter = event.target.value;
+    this.page = 0;
+    this.load();
+  }
+
+  @action
+  setSitemapFilter(event) {
+    this.sitemapFilter = event.target.value;
+    this.page = 0;
+    this.load();
+  }
+
+  @action
+  setPageState(event) {
+    this.pageState = event.target.value;
     this.page = 0;
     this.load();
   }
@@ -154,9 +197,59 @@ export default class AdminPluginsShowSitemapAutolinkKeywordsController extends C
                 q: this.query,
                 state: this.stateFilter,
                 type: this.typeFilter,
+                page_state: this.pageState,
+                sitemap: this.sitemapFilter,
               },
             },
           });
+          await this.load();
+        } catch (e) {
+          popupAjaxError(e);
+        }
+      },
+    });
+  }
+
+  // Deletion, not disabling: the page and its keywords are forgotten
+  // entirely, so a URL that later returns to the sitemap is ingested as
+  // a brand new page rather than resurrecting old review decisions.
+  @action
+  purgeGone() {
+    const count = this.gonePages;
+    if (count === 0) {
+      return;
+    }
+    this.dialog.yesNoConfirm({
+      message: i18n("sitemap_autolink.admin.purge_gone_confirm", { count }),
+      didConfirm: async () => {
+        try {
+          await ajax(`${BASE}/entries/purge`, {
+            type: "DELETE",
+            data: {
+              filter: {
+                q: this.query,
+                type: this.typeFilter,
+                sitemap: this.sitemapFilter,
+              },
+            },
+          });
+          await this.load();
+        } catch (e) {
+          popupAjaxError(e);
+        }
+      },
+    });
+  }
+
+  @action
+  purgeEntry(entry) {
+    this.dialog.yesNoConfirm({
+      message: i18n("sitemap_autolink.admin.purge_entry_confirm", {
+        url: entry.url,
+      }),
+      didConfirm: async () => {
+        try {
+          await ajax(`${BASE}/entries/${entry.id}`, { type: "DELETE" });
           await this.load();
         } catch (e) {
           popupAjaxError(e);

@@ -2,7 +2,7 @@ import { withPluginApi } from "discourse/lib/plugin-api";
 
 const PLUGIN_ID = "discourse-sitemap-autolink";
 
-const PAGES = ["overview", "keywords", "conflicts", "logs"];
+const PAGES = ["overview", "sitemaps", "keywords", "conflicts", "logs"];
 
 export default {
   name: "sitemap-autolink-admin-nav",

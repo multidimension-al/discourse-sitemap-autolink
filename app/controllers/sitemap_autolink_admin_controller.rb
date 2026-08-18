@@ -12,6 +12,11 @@
 #   PUT    /admin/plugins/discourse-sitemap-autolink/terms/bulk   (ids= or filter[…]=)
 #   PUT    /admin/plugins/discourse-sitemap-autolink/terms/:id    (approve/disable…)
 #   DELETE /admin/plugins/discourse-sitemap-autolink/terms/:id
+#   DELETE /admin/plugins/discourse-sitemap-autolink/entries/purge  (filter[…]=)
+#   DELETE /admin/plugins/discourse-sitemap-autolink/entries/:id  (purge one)
+#   GET    /admin/plugins/discourse-sitemap-autolink/sitemaps/list
+#   PUT    /admin/plugins/discourse-sitemap-autolink/sitemaps/:id (status=)
+#   POST   /admin/plugins/discourse-sitemap-autolink/sitemaps/discover
 #   GET    /admin/plugins/discourse-sitemap-autolink/collisions?q=&page=
 #   GET    /admin/plugins/discourse-sitemap-autolink/overlaps?q=&page=
 #   POST   /admin/plugins/discourse-sitemap-autolink/sync
@@ -50,6 +55,10 @@ class SitemapAutolinkAdminController < Admin::AdminController
              terms: SitemapAutolinkTerm.count,
              pending_terms: SitemapAutolinkTerm.pending_review.count,
              entry_types: entry_types,
+             # Child sitemaps discovered but not yet approved. Nothing
+             # from them is imported, which is easy to mistake for a
+             # broken sync unless the overview says so.
+             pending_sitemaps: SitemapAutolinkSitemap.awaiting_decision.count,
              enabled_types_setting: SiteSetting.sitemap_autolink_enabled_types,
              last_run: last_run && serialize_run(last_run),
            }
@@ -80,7 +89,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
   # asks is "what points at THIS url" — so a search for a phrase returns
   # the page that owns it, with its whole phrase list intact.
   def entries
-    scope = SitemapAutolinkEntry.includes(:terms).order(:url)
+    scope = SitemapAutolinkEntry.includes(:terms, :sitemaps).order(:url)
     scope = scope.where(content_type: params[:type]) if params[:type].present?
     scope = scope.where(enabled: params[:enabled] == "true") if params[:enabled].present?
     if params[:q].present?
@@ -101,6 +110,8 @@ class SitemapAutolinkAdminController < Admin::AdminController
           id: SitemapAutolinkTerm.where(state: validated_state(params[:state])).select(:entry_id),
         )
     end
+    scope = scope.where(id: entry_ids_in_sitemap(params[:sitemap])) if params[:sitemap].present?
+    scope = apply_page_state(scope, params[:page_state])
     page = current_page
     total = scope.count
     records = scope.offset(page * PAGE_SIZE).limit(PAGE_SIZE).to_a
@@ -111,10 +122,20 @@ class SitemapAutolinkAdminController < Admin::AdminController
              per_page: PAGE_SIZE,
              pages: page_count(total),
              types: entry_types,
+             sitemaps: entry_sitemaps,
              # Phrase counts, not page counts: the state filters and the
              # bulk actions beside them both act on phrases, and they
              # must agree about how many.
              state_counts: state_counts(term_scope(params)),
+             # A keyword's state says it passed review. Whether it LINKS
+             # also depends on its page still being live, and the two
+             # come apart constantly — a page filtered out of the
+             # sitemap keeps every one of its auto-active keywords.
+             # Reporting only the state would call those active.
+             linking_count: linking_count(params),
+             # How many of the matching pages are gone from the sitemap:
+             # the count the purge button names before it deletes them.
+             gone_pages: scope.gone.count,
              entries: records.map { |e| serialize_entry(e, duplicates: duplicates) },
            }
   end
@@ -201,6 +222,138 @@ class SitemapAutolinkAdminController < Admin::AdminController
     entry.update!(changes)
     bump
     render json: serialize_entry(entry.reload)
+  end
+
+  # Every sitemap the plugin knows about: the configured sources, and
+  # the children found inside any of them that is an index.
+  #
+  # This exists because "pull from these sitemaps" was never enough
+  # information. Pointing at an index silently expanded to whatever it
+  # listed, and children holding tens of thousands of URLs got imported
+  # with no warning and no opportunity to decline. Here each one is a row
+  # with its size, so the decision is made with the number in hand.
+  def sitemaps
+    records = SitemapAutolinkSitemap.all.to_a
+    totals = SitemapAutolinkEntrySitemap.group(:sitemap_id).count
+    live =
+      SitemapAutolinkEntrySitemap
+        .joins(:entry)
+        .merge(SitemapAutolinkEntry.active)
+        .group(:sitemap_id)
+        .count
+    gone =
+      SitemapAutolinkEntrySitemap
+        .joins(:entry)
+        .merge(SitemapAutolinkEntry.gone)
+        .group(:sitemap_id)
+        .count
+    # Each configured source immediately followed by its own children,
+    # so the page reads as the tree it actually is.
+    records.sort_by! { |r| [r.parent_url.presence || r.url, r.parent_url.present? ? 1 : 0, r.url] }
+    render json: {
+             sitemaps:
+               records.map do |record|
+                 serialize_sitemap(
+                   record,
+                   entries: totals[record.id] || 0,
+                   live: live[record.id] || 0,
+                   gone: gone[record.id] || 0,
+                 )
+               end,
+             pending: records.count { |r| r.status == SitemapAutolinkSitemap::PENDING },
+             configured_sources: SiteSetting.sitemap_autolink_sources.split("|").map(&:strip),
+             auto_import: SiteSetting.sitemap_autolink_auto_import_new_sitemaps,
+           }
+  end
+
+  # Read the configured sources and record what they list, WITHOUT
+  # importing anything. Bounded by its own budget because it runs inside
+  # this request.
+  def discover_sitemaps
+    if SiteSetting.sitemap_autolink_sources.blank?
+      render json: failed_json.merge(error: "configure sitemap_autolink_sources first"),
+             status: :unprocessable_content
+      return
+    end
+    report = SitemapAutolink::SitemapSync.new.discover!
+    render json:
+             success_json.merge(
+               errors: report[:errors],
+               notes: report[:notes],
+               pending: report[:pending_sitemaps],
+             )
+  end
+
+  # Approve a sitemap for import, or decline it.
+  #
+  # Turning one OFF detaches its URLs there and then, rather than
+  # leaving them to look imported until the next sync: anything that was
+  # listed ONLY there is marked gone immediately, and `purge=true`
+  # deletes those outright.
+  def update_sitemap
+    record = SitemapAutolinkSitemap.find(params[:id])
+    status = params.require(:status).to_s
+    raise Discourse::InvalidParameters.new(:status) if !SitemapAutolinkSitemap.valid_status?(status)
+
+    result = { orphaned: 0, purged: 0 }
+    was_importing = record.status == SitemapAutolinkSitemap::ENABLED
+    record.update!(status: status)
+    if was_importing && status != SitemapAutolinkSitemap::ENABLED
+      result = detach_sitemap!(record, purge: params[:purge] == "true")
+    end
+    bump
+    record.reload
+    render json:
+             serialize_sitemap(record, entries: record.entry_sitemaps.count).merge(result)
+  end
+
+  # Hard-delete every page matching the current filter that is gone from
+  # the sitemap.
+  #
+  # Everything else in this plugin is reversible — a page that vanishes
+  # is disabled, keeps its keywords and comes back by itself if the URL
+  # returns. That is the right default and the wrong only option: a
+  # catalog that has been re-pointed at different sitemaps accumulates
+  # dead pages that will never return, and there was no way to be rid of
+  # them. Purged pages are forgotten completely, so a URL that does turn
+  # up again is ingested as a brand new page.
+  def purge_entries
+    scope = SitemapAutolinkEntry.gone
+    scope = scope.where(content_type: params.dig(:filter, :type)) if params.dig(:filter, :type).present?
+    if params.dig(:filter, :sitemap).present?
+      scope = scope.where(id: entry_ids_in_sitemap(params.dig(:filter, :sitemap)))
+    end
+    if params.dig(:filter, :q).present?
+      q = "%#{ActiveRecord::Base.sanitize_sql_like(params.dig(:filter, :q))}%"
+      scope = scope.where("url ILIKE :q OR title ILIKE :q", q: q)
+    end
+    purged = purge_entry_ids!(scope.pluck(:id))
+    bump
+    render json: success_json.merge(purged: purged)
+  end
+
+  # Purge one page, from its card.
+  #
+  # Only a page that is GONE from the sitemap may be deleted. A page
+  # still listed in one would be re-ingested by the next sync, so
+  # deleting it is not a thing that can succeed — the honest control for
+  # a live page is Disable, and the API says so rather than performing a
+  # deletion that quietly undoes itself.
+  def destroy_entry
+    entry = SitemapAutolinkEntry.find(params[:id])
+    if !entry.removed_from_source
+      render json:
+               failed_json.merge(
+                 error:
+                   "#{entry.url} is still listed in a sitemap — disable it instead. " \
+                     "Only pages gone from the sitemap can be deleted.",
+               ),
+             status: :unprocessable_content
+      return
+    end
+    purge_entry_ids!([entry.id])
+    bump
+    render json: success_json
   end
 
   def create_term
@@ -455,6 +608,42 @@ class SitemapAutolinkAdminController < Admin::AdminController
     params[:page].to_i.clamp(0, 10_000)
   end
 
+  # Terms first, then memberships, then the entries themselves: three
+  # statements instead of the per-row cascade `destroy_all` would issue,
+  # because a purge routinely addresses thousands of rows from inside a
+  # web request.
+  def purge_entry_ids!(ids)
+    ids = Array(ids)
+    return 0 if ids.empty?
+    SitemapAutolinkTerm.where(entry_id: ids).delete_all
+    SitemapAutolinkEntrySitemap.where(entry_id: ids).delete_all
+    SitemapAutolinkEntry.where(id: ids).delete_all
+  end
+
+  # Detach every URL this sitemap was carrying. Whatever is left with no
+  # sitemap at all is gone from the source by definition and says so
+  # straight away instead of after the next sync.
+  def detach_sitemap!(record, purge: false)
+    entry_ids = SitemapAutolinkEntrySitemap.where(sitemap_id: record.id).pluck(:entry_id)
+    SitemapAutolinkEntrySitemap.where(sitemap_id: record.id).delete_all
+    return { orphaned: 0, purged: 0 } if entry_ids.empty?
+    orphan_ids =
+      SitemapAutolinkEntry
+        .where(id: entry_ids, source: "sitemap")
+        .where.not(id: SitemapAutolinkEntrySitemap.select(:entry_id))
+        .pluck(:id)
+    return { orphaned: 0, purged: 0 } if orphan_ids.empty?
+    return { orphaned: orphan_ids.size, purged: purge_entry_ids!(orphan_ids) } if purge
+    SitemapAutolinkEntry.where(id: orphan_ids).update_all(removed_from_source: true)
+    { orphaned: orphan_ids.size, purged: 0 }
+  end
+
+  def entry_ids_in_sitemap(url)
+    SitemapAutolinkEntrySitemap.where(
+      sitemap_id: SitemapAutolinkSitemap.where(url: url).select(:id),
+    ).select(:entry_id)
+  end
+
   def page_count(total)
     (total.to_f / PAGE_SIZE).ceil
   end
@@ -463,8 +652,68 @@ class SitemapAutolinkAdminController < Admin::AdminController
     SitemapAutolinkEntry.distinct.order(:content_type).pluck(:content_type)
   end
 
-  def linkable_terms
-    SitemapAutolinkTerm.linkable.joins(:entry).merge(SitemapAutolinkEntry.active)
+  # Only sitemaps that actually produced entries. Rows ingested before
+  # membership was recorded have none, and appear under "all" until a
+  # sync sees their URL again.
+  def entry_sitemaps
+    SitemapAutolinkSitemap
+      .where(id: SitemapAutolinkEntrySitemap.select(:sitemap_id))
+      .order(:url)
+      .pluck(:url)
+  end
+
+  def serialize_sitemap(record, entries: 0, live: 0, gone: 0)
+    {
+      id: record.id,
+      url: record.url,
+      parent_url: record.parent_url,
+      content_type: record.content_type,
+      kind: record.kind,
+      status: record.status,
+      configured: record.configured,
+      url_count: record.url_count,
+      url_count_partial: record.url_count_partial,
+      last_seen_at: record.last_seen_at,
+      last_fetched_at: record.last_fetched_at,
+      last_error: record.last_error,
+      entries: entries,
+      live_entries: live,
+      gone_entries: gone,
+    }
+  end
+
+  # A page is "live" only when it is both enabled and still in the
+  # sitemap; those are separate columns and the difference matters, so
+  # the filter names them separately rather than offering one on/off.
+  def apply_page_state(scope, value)
+    case value
+    when "live"
+      scope.where(sitemap_autolink_entries: { enabled: true, removed_from_source: false })
+    when "disabled"
+      scope.where(sitemap_autolink_entries: { enabled: false })
+    when "removed"
+      scope.where(sitemap_autolink_entries: { removed_from_source: true })
+    else
+      scope
+    end
+  end
+
+  # Of the keywords the current filter selects, how many compile into a
+  # rule: linkable state AND a live page.
+  #
+  # Spelled out with `where` rather than merging the `active` scope on
+  # purpose. `merge` REPLACES a conflicting condition on the same column
+  # instead of anding it, so merging `removed_from_source: false` into a
+  # filter for `removed_from_source: true` quietly undid the filter and
+  # counted the live pages instead. Anded, the pair is a contradiction —
+  # which is the true answer: nothing on a removed page links.
+  def linking_count(source)
+    scope = term_scope(source)
+    scope = scope.where(state: validated_state(source[:state])) if source[:state].present?
+    scope
+      .where(state: SitemapAutolinkTerm::LINKABLE_STATES)
+      .where(sitemap_autolink_entries: { enabled: true, removed_from_source: false })
+      .count
   end
 
   # Which of THIS page's phrases another page also claims, so a keyword
@@ -486,6 +735,10 @@ class SitemapAutolinkAdminController < Admin::AdminController
   # and the per-state counts drawn beside it.
   def term_scope(source)
     scope = SitemapAutolinkTerm.joins(:entry)
+    scope = apply_page_state(scope, source[:page_state])
+    if source[:sitemap].present?
+      scope = scope.where(sitemap_autolink_entries: { id: entry_ids_in_sitemap(source[:sitemap]) })
+    end
     if source[:type].present?
       scope = scope.where(sitemap_autolink_entries: { content_type: source[:type] })
     end
@@ -586,6 +839,9 @@ class SitemapAutolinkAdminController < Admin::AdminController
       removed_from_source: entry.removed_from_source,
       title_source: entry.title_source,
       source: entry.source,
+      # Plural on purpose: the same URL is often listed in more than one
+      # sitemap, and a card that named only one would be wrong there.
+      sitemaps: entry.sitemaps.map(&:url).sort,
       last_seen_at: entry.last_seen_at,
       terms:
         entry

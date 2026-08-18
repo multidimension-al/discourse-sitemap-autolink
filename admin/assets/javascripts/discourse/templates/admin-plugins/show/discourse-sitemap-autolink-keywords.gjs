@@ -70,9 +70,50 @@ const StateFilter = <template>
           </option>
         {{/each}}
       </select>
+      {{#if @controller.sitemaps.length}}
+        <select
+          class="sitemap-autolink-admin__sitemap-filter"
+          {{on "change" @controller.setSitemapFilter}}
+        >
+          <option value="">{{i18n
+              "sitemap_autolink.admin.all_sitemaps"
+            }}</option>
+          {{#each @controller.sitemaps as |sitemap|}}
+            <option
+              value={{sitemap}}
+              selected={{eq sitemap @controller.sitemapFilter}}
+            >
+              {{sitemap}}
+            </option>
+          {{/each}}
+        </select>
+      {{/if}}
+      <select
+        class="sitemap-autolink-admin__page-state-filter"
+        {{on "change" @controller.setPageState}}
+      >
+        <option value="">{{i18n
+            "sitemap_autolink.admin.page_state_all"
+          }}</option>
+        <option value="live" selected={{eq "live" @controller.pageState}}>
+          {{i18n "sitemap_autolink.admin.page_state_live"}}
+        </option>
+        <option
+          value="disabled"
+          selected={{eq "disabled" @controller.pageState}}
+        >
+          {{i18n "sitemap_autolink.admin.page_state_disabled"}}
+        </option>
+        <option value="removed" selected={{eq "removed" @controller.pageState}}>
+          {{i18n "sitemap_autolink.admin.page_state_removed"}}
+        </option>
+      </select>
     </form>
 
     <div class="sitemap-autolink-admin__state-filters">
+      <span class="sitemap-autolink-admin__filter-label">{{i18n
+          "sitemap_autolink.admin.review_state"
+        }}</span>
       <StateFilter
         @label={{i18n "sitemap_autolink.admin.state_all"}}
         @value=""
@@ -116,6 +157,7 @@ const StateFilter = <template>
           "sitemap_autolink.admin.result_summary"
           pages=@controller.matchingPages
           phrases=@controller.selectedPhrases
+          linking=@controller.linkingCount
         }}
       </span>
       <DButton
@@ -128,6 +170,16 @@ const StateFilter = <template>
         @action={{fn @controller.bulkPhrases "disabled"}}
         class="btn-small btn-danger sitemap-autolink-admin__disable-all"
       />
+      {{#if @controller.gonePages}}
+        <DButton
+          @translatedLabel={{i18n
+            "sitemap_autolink.admin.purge_gone"
+            count=@controller.gonePages
+          }}
+          @action={{@controller.purgeGone}}
+          class="btn-small btn-danger sitemap-autolink-admin__purge-gone"
+        />
+      {{/if}}
     </p>
 
     {{#if @controller.data.entries.length}}
@@ -174,6 +226,14 @@ const StateFilter = <template>
                 @action={{fn @controller.toggleEntry entry}}
                 class="btn-small sitemap-autolink-admin__toggle-entry"
               />
+              {{#if entry.removed_from_source}}
+                <DButton
+                  @icon="trash-can"
+                  @title="sitemap_autolink.admin.purge_entry"
+                  @action={{fn @controller.purgeEntry entry}}
+                  class="btn-small btn-danger sitemap-autolink-admin__purge-entry"
+                />
+              {{/if}}
             </header>
 
             <a
@@ -182,6 +242,25 @@ const StateFilter = <template>
               rel="noopener noreferrer"
               target="_blank"
             >{{entry.url}}</a>
+
+            {{#if entry.sitemaps.length}}
+              <p class="sitemap-autolink-admin__entry-sitemaps">
+                {{i18n "sitemap_autolink.admin.listed_in"}}
+                {{#each entry.sitemaps as |sitemap|}}
+                  <span class="sitemap-autolink-admin__pill">{{sitemap}}</span>
+                {{/each}}
+              </p>
+            {{/if}}
+
+            {{#if entry.removed_from_source}}
+              <p class="sitemap-autolink-admin__not-linking">
+                {{i18n "sitemap_autolink.admin.page_removed_explainer"}}
+              </p>
+            {{else if (not entry.enabled)}}
+              <p class="sitemap-autolink-admin__not-linking">
+                {{i18n "sitemap_autolink.admin.page_disabled_explainer"}}
+              </p>
+            {{/if}}
 
             <div class="sitemap-autolink-admin__entry-terms">
               {{#each entry.terms as |term|}}

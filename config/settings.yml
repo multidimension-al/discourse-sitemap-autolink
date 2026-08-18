@@ -51,6 +51,8 @@ plugins:
     default: ""
     type: list
     list_type: compact
+  sitemap_autolink_auto_import_new_sitemaps:
+    default: false
   sitemap_autolink_sync_enabled:
     default: false
   sitemap_autolink_page_fetch_delay_ms:

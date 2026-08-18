@@ -28,6 +28,16 @@ RSpec.describe SitemapAutolink::SitemapSync do
     )
   end
 
+  def index_sync(responses, **opts)
+    described_class.new(
+      sources: [{ url: "#{base}/sitemap.xml", type: "product" }],
+      title_suffixes: [],
+      page_fetch_delay_ms: 0,
+      http_get: ->(url, _max) { responses[url] },
+      **opts,
+    )
+  end
+
   it "creates entries with page titles and generated terms on first run" do
     responses = {
       "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget-frame-kit", "2026-08-01"]]),
@@ -45,22 +55,288 @@ RSpec.describe SitemapAutolink::SitemapSync do
     expect(report[:notes].join).to include("fetched 1 pages")
   end
 
-  it "expands sitemap indexes into their child sitemaps" do
+  it "records a sitemap index's children without importing any of them" do
     responses = {
       "#{base}/sitemap.xml" =>
         "<?xml version=\"1.0\"?><sitemapindex><sitemap><loc>#{base}/sitemap-products.xml</loc></sitemap></sitemapindex>",
       "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget-frame-kit", nil]]),
       "#{base}/shop/widget-frame-kit" => page_html("Widget Frame Kit"),
     }
+    report = index_sync(responses).run!
+
+    # Naming an index is not consent to import everything it lists: the
+    # child is recorded, sized, and left for somebody to decide about.
+    expect(report[:added]).to be_empty
+    expect(report[:pending_sitemaps]).to eq(["#{base}/sitemap-products.xml"])
+    expect(SitemapAutolinkEntry.count).to eq(0)
+
+    child = SitemapAutolinkSitemap.find_by(url: "#{base}/sitemap-products.xml")
+    expect(child.status).to eq("pending")
+    expect(child.parent_url).to eq("#{base}/sitemap.xml")
+    expect(child.content_type).to eq("product")
+    # Counted so the decision can be made against a number.
+    expect(child.url_count).to eq(1)
+    expect(SitemapAutolinkSitemap.find_by(url: "#{base}/sitemap.xml").kind).to eq("index")
+  end
+
+  it "imports a child sitemap once it is approved" do
+    responses = {
+      "#{base}/sitemap.xml" =>
+        "<?xml version=\"1.0\"?><sitemapindex><sitemap><loc>#{base}/sitemap-products.xml</loc></sitemap></sitemapindex>",
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget-frame-kit", nil]]),
+      "#{base}/shop/widget-frame-kit" => page_html("Widget Frame Kit"),
+    }
+    index_sync(responses).run!
+    SitemapAutolinkSitemap.find_by(url: "#{base}/sitemap-products.xml").update!(status: "enabled")
+
+    report = index_sync(responses).run!
+    expect(report[:added]).to eq(["#{base}/shop/widget-frame-kit"])
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget-frame-kit")
+    # The child sitemap listed the URL, so that is what it came out of —
+    # recording the index would lump every child together.
+    expect(entry.sitemaps.pluck(:url)).to eq(["#{base}/sitemap-products.xml"])
+  end
+
+  it "imports children straight away when the auto-import setting is on" do
+    SiteSetting.sitemap_autolink_auto_import_new_sitemaps = true
+    responses = {
+      "#{base}/sitemap.xml" =>
+        "<?xml version=\"1.0\"?><sitemapindex><sitemap><loc>#{base}/sitemap-products.xml</loc></sitemap></sitemapindex>",
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget-frame-kit", nil]]),
+      "#{base}/shop/widget-frame-kit" => page_html("Widget Frame Kit"),
+    }
+    expect(index_sync(responses).run![:added]).to eq(["#{base}/shop/widget-frame-kit"])
+  end
+
+  it "never fetches a child sitemap that was ignored" do
+    responses = {
+      "#{base}/sitemap.xml" =>
+        "<?xml version=\"1.0\"?><sitemapindex><sitemap><loc>#{base}/sitemap-products.xml</loc></sitemap></sitemapindex>",
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget-frame-kit", nil]]),
+      "#{base}/shop/widget-frame-kit" => page_html("Widget Frame Kit"),
+    }
+    index_sync(responses).run!
+    SitemapAutolinkSitemap.find_by(url: "#{base}/sitemap-products.xml").update!(status: "ignored")
+
+    fetched = []
     sync =
       described_class.new(
         sources: [{ url: "#{base}/sitemap.xml", type: "product" }],
         title_suffixes: [],
         page_fetch_delay_ms: 0,
-        http_get: ->(url, _max) { responses[url] },
+        http_get:
+          ->(url, _max) do
+            fetched << url
+            responses[url]
+          end,
       )
-    report = sync.run!
-    expect(report[:added]).to eq(["#{base}/shop/widget-frame-kit"])
+    sync.run!
+    expect(fetched).to eq(["#{base}/sitemap.xml"])
+    expect(SitemapAutolinkEntry.count).to eq(0)
+  end
+
+  it "records every sitemap that lists a URL, not just the first" do
+    responses = {
+      "#{base}/sitemap.xml" => "<?xml version=\"1.0\"?><sitemapindex>" \
+        "<sitemap><loc>#{base}/sitemap-a.xml</loc></sitemap>" \
+        "<sitemap><loc>#{base}/sitemap-b.xml</loc></sitemap></sitemapindex>",
+      "#{base}/sitemap-a.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/sitemap-b.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha"),
+    }
+    index_sync(responses).run!
+    SitemapAutolinkSitemap.where(parent_url: "#{base}/sitemap.xml").update_all(status: "enabled")
+    index_sync(responses).run!
+
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget")
+    # Overlapping sitemaps are normal, and a page in both must be
+    # findable under either — one column could only have held one.
+    expect(entry.sitemaps.pluck(:url)).to contain_exactly(
+      "#{base}/sitemap-a.xml",
+      "#{base}/sitemap-b.xml",
+    )
+  end
+
+  # Pruning asks the database for memberships older than this run's
+  # timestamp. Time.zone.now carries nanosecond digits the column cannot
+  # store, so an untruncated stamp makes every row the run just wrote
+  # compare as older than itself — and the prune wipes the lot.
+  it "keeps memberships through a run that changed nothing" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha"),
+    }
+    build_sync(responses).run!
+    build_sync(responses).run!
+
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget")
+    expect(entry.sitemaps.pluck(:url)).to eq(["#{base}/sitemap-products.xml"])
+    expect(entry.removed_from_source).to be(false)
+  end
+
+  it "drops only the membership a URL lost when it leaves one of its sitemaps" do
+    responses = {
+      "#{base}/sitemap.xml" => "<?xml version=\"1.0\"?><sitemapindex>" \
+        "<sitemap><loc>#{base}/sitemap-a.xml</loc></sitemap>" \
+        "<sitemap><loc>#{base}/sitemap-b.xml</loc></sitemap></sitemapindex>",
+      "#{base}/sitemap-a.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/sitemap-b.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha"),
+    }
+    index_sync(responses).run!
+    SitemapAutolinkSitemap.where(parent_url: "#{base}/sitemap.xml").update_all(status: "enabled")
+    index_sync(responses).run!
+
+    responses["#{base}/sitemap-b.xml"] = sitemap_xml([])
+    index_sync(responses).run!
+
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget")
+    expect(entry.sitemaps.pluck(:url)).to eq(["#{base}/sitemap-a.xml"])
+    # Still listed somewhere, so it is not gone from the source.
+    expect(entry.removed_from_source).to be(false)
+  end
+
+  it "records the sitemap a URL came from, and follows it when it moves" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha"),
+    }
+    build_sync(responses).run!
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget")
+    expect(entry.sitemaps.pluck(:url)).to eq(["#{base}/sitemap-products.xml"])
+
+    moved =
+      described_class.new(
+        sources: [{ url: "#{base}/sitemap-archive.xml", type: "product" }],
+        title_suffixes: [],
+        page_fetch_delay_ms: 0,
+        http_get:
+          ->(url, _max) do
+            {
+              "#{base}/sitemap-archive.xml" => sitemap_xml([["/shop/widget", nil]]),
+              "#{base}/shop/widget" => page_html("Widget Alpha"),
+            }[
+              url
+            ]
+          end,
+      )
+    moved.run!
+    expect(entry.reload.sitemaps.pluck(:url)).to include("#{base}/sitemap-archive.xml")
+  end
+
+  # The opt-in must not retroactively un-import a working catalog. An
+  # install upgrading into this behaviour meets its own child sitemaps
+  # as "new", and holding them for approval would drop every page in
+  # them out of the sitemap and switch the whole catalog off.
+  it "keeps importing a child sitemap whose URLs are already in the catalog" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha"),
+    }
+    build_sync(responses).run!
+    # Wipe what the plugin knows about sitemaps, leaving the catalog in
+    # the state an upgrade produces: entries, no sitemap records.
+    SitemapAutolinkEntrySitemap.delete_all
+    SitemapAutolinkSitemap.delete_all
+
+    index_responses = {
+      "#{base}/sitemap.xml" =>
+        "<?xml version=\"1.0\"?><sitemapindex><sitemap><loc>#{base}/sitemap-products.xml</loc></sitemap></sitemapindex>",
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha"),
+    }
+    report = index_sync(index_responses).run!
+
+    expect(report[:pending_sitemaps]).to be_empty
+    expect(SitemapAutolinkSitemap.find_by(url: "#{base}/sitemap-products.xml").status).to eq(
+      "enabled",
+    )
+    entry = SitemapAutolinkEntry.find_by(url: "#{base}/shop/widget")
+    expect(entry.removed_from_source).to be(false)
+    expect(entry.sitemaps.pluck(:url)).to eq(["#{base}/sitemap-products.xml"])
+  end
+
+  it "still holds a genuinely new child sitemap for approval" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha"),
+    }
+    build_sync(responses).run!
+    SitemapAutolinkEntrySitemap.delete_all
+    SitemapAutolinkSitemap.delete_all
+
+    index_responses = {
+      "#{base}/sitemap.xml" => "<?xml version=\"1.0\"?><sitemapindex>" \
+        "<sitemap><loc>#{base}/sitemap-products.xml</loc></sitemap>" \
+        "<sitemap><loc>#{base}/sitemap-tags.xml</loc></sitemap></sitemapindex>",
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/sitemap-tags.xml" => sitemap_xml([["/tag/one", nil], ["/tag/two", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha"),
+    }
+    report = index_sync(index_responses).run!
+
+    expect(report[:pending_sitemaps]).to eq(["#{base}/sitemap-tags.xml"])
+    expect(SitemapAutolinkEntry.find_by(url: "#{base}/tag/one")).to be_nil
+    expect(SitemapAutolinkSitemap.find_by(url: "#{base}/sitemap-tags.xml").url_count).to eq(2)
+  end
+
+  it "discovers what the sources list without importing anything" do
+    responses = {
+      "#{base}/sitemap.xml" =>
+        "<?xml version=\"1.0\"?><sitemapindex><sitemap><loc>#{base}/sitemap-products.xml</loc></sitemap></sitemapindex>",
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil], ["/shop/gadget", nil]]),
+    }
+    index_sync(responses).discover!
+
+    expect(SitemapAutolinkEntry.count).to eq(0)
+    expect(SitemapAutolinkSitemap.find_by(url: "#{base}/sitemap-products.xml").url_count).to eq(2)
+  end
+
+  # A sitemap grows between the day it is discovered and the day
+  # somebody decides about it, and the count is what they decide on.
+  it "refreshes the count of a waiting sitemap on an explicit read, but not on a sync" do
+    responses = {
+      "#{base}/sitemap.xml" =>
+        "<?xml version=\"1.0\"?><sitemapindex><sitemap><loc>#{base}/sitemap-tags.xml</loc></sitemap></sitemapindex>",
+      "#{base}/sitemap-tags.xml" => sitemap_xml([["/tag/one", nil]]),
+    }
+    index_sync(responses).run!
+    waiting = SitemapAutolinkSitemap.find_by(url: "#{base}/sitemap-tags.xml")
+    expect(waiting.url_count).to eq(1)
+
+    responses["#{base}/sitemap-tags.xml"] = sitemap_xml([["/tag/one", nil], ["/tag/two", nil]])
+
+    # A sync leaves it alone: re-reading sitemaps nobody wants is the
+    # cost the opt-in exists to avoid.
+    index_sync(responses).run!
+    expect(waiting.reload.url_count).to eq(1)
+
+    index_sync(responses).discover!
+    expect(waiting.reload.url_count).to eq(2)
+  end
+
+  it "stops calling a sitemap configured once it leaves the setting" do
+    responses = {
+      "#{base}/sitemap-products.xml" => sitemap_xml([["/shop/widget", nil]]),
+      "#{base}/shop/widget" => page_html("Widget Alpha"),
+    }
+    build_sync(responses).run!
+    expect(SitemapAutolinkSitemap.find_by(url: "#{base}/sitemap-products.xml").configured).to be(
+      true,
+    )
+
+    described_class.new(
+      sources: [{ url: "#{base}/sitemap-other.xml", type: "product" }],
+      title_suffixes: [],
+      page_fetch_delay_ms: 0,
+      http_get: ->(url, _max) { { "#{base}/sitemap-other.xml" => sitemap_xml([]) }[url] },
+    ).run!
+
+    # Configured sources are the ones the admin is given no way to turn
+    # off, so a stale flag would leave this one stuck.
+    expect(SitemapAutolinkSitemap.find_by(url: "#{base}/sitemap-products.xml").configured).to be(
+      false,
+    )
   end
 
   it "treats a sitemap index above the child cap as partial and keeps removal detection off" do

@@ -65,6 +65,14 @@ import { i18n } from "discourse-i18n";
             {{i18n "sitemap_autolink.admin.no_sources"}}
           </p>
         {{/unless}}
+        {{#if @controller.status.pending_sitemaps}}
+          <p class="sitemap-autolink-admin__warning">
+            {{i18n
+              "sitemap_autolink.admin.pending_sitemaps_overview"
+              count=@controller.status.pending_sitemaps
+            }}
+          </p>
+        {{/if}}
         {{#if @controller.typesMismatch}}
           <p class="sitemap-autolink-admin__warning">
             {{i18n

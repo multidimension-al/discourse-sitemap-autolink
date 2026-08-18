@@ -184,6 +184,21 @@
     }
   }
 
+  // Said once per card, not once per keyword chip: when the page is
+  // out, every one of its keywords is out with it.
+  &__not-linking {
+    margin: 0.5em 0 0;
+    padding: 0.4em 0.6em;
+    border-radius: 0.25em;
+    background: var(--danger-low);
+    color: var(--danger);
+    font-size: var(--font-down-1);
+  }
+
+  &__filter-label {
+    color: var(--primary-medium);
+  }
+
   &__no-terms {
     color: var(--primary-medium);
   }
@@ -231,5 +246,71 @@
     display: flex;
     align-items: center;
     gap: 0.5em;
+  }
+
+  // One card per sitemap document. Children of an index are indented
+  // beneath it, so the shape of the tree is visible rather than implied.
+  &__sitemap {
+    border: 1px solid var(--primary-low);
+    border-radius: var(--d-border-radius, 4px);
+    padding: 0.75em;
+    margin-bottom: 0.5em;
+
+    &.--child {
+      margin-left: 2em;
+      border-left: 3px solid var(--primary-low-mid);
+    }
+
+    &.is-pending {
+      border-color: var(--highlight-medium);
+    }
+
+    &.is-ignored {
+      opacity: 0.65;
+    }
+  }
+
+  &__sitemap-header {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4em;
+  }
+
+  &__sitemap-url {
+    font-weight: bold;
+    overflow-wrap: anywhere;
+  }
+
+  &__sitemap-meta {
+    margin: 0.35em 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1em;
+    font-size: var(--font-down-1);
+    color: var(--primary-medium);
+  }
+
+  &__sitemap-count.--unknown {
+    font-style: italic;
+  }
+
+  &__sitemap-error {
+    color: var(--danger);
+  }
+
+  &__sitemap-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4em;
+  }
+
+  // Which sitemaps list this page — plural, because the same URL is
+  // routinely in more than one.
+  &__entry-sitemaps {
+    margin: 0.25em 0;
+    font-size: var(--font-down-1);
+    color: var(--primary-medium);
+    overflow-wrap: anywhere;
   }
 }
