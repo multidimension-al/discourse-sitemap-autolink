@@ -367,13 +367,21 @@ searched on the server.
 
 A JSON management API (staff-only) backs all of it under
 `/admin/plugins/discourse-sitemap-autolink/` — `status`, `entries`,
-`terms`, `collisions`, `overlaps`, `runs`, `sync`, `rebake` — if you
-prefer to script against it. Every list endpoint takes `page` and `q`;
-`entries` and `terms` also take `state` and `type`; `entries` also
-takes `page_state` (`live`, `disabled`, `removed`) and `sitemap`, and
-reports `linking_count` and `sitemaps` beside `state_counts`. The review queue is
-`entries?state=pending_review` (pages) or `terms?state=pending_review`
-(keywords).
+`terms`, `collisions`, `overlaps`, `runs`, `sync`, `rebake`,
+`sitemaps/list`, `sitemaps/discover` — if you prefer to script against
+it. Every list endpoint takes `page` and `q`; `entries` and `terms`
+also take `state` and `type`; `entries` also takes `page_state`
+(`live`, `disabled`, `removed`) and `sitemap`, and reports
+`linking_count`, `gone_pages` and `sitemaps` beside `state_counts`. The
+review queue is `entries?state=pending_review` (pages) or
+`terms?state=pending_review` (keywords).
+
+`PUT sitemaps/:id` takes `status` (`enabled`, `pending`, `ignored`) and
+an optional `purge=true`. `DELETE entries/purge` takes the same
+`filter[…]` keys as the listing and only ever deletes pages already
+gone from the sitemap; `DELETE entries/:id` refuses a page that is
+still listed in one. (The sitemap listing is `sitemaps/list` rather
+than `sitemaps` because the admin page itself owns that path.)
 
 Console tooling mirrors the page: `rake sitemap_autolink:report`,
 `rake sitemap_autolink:preview[20]`, `rake sitemap_autolink:sync`.
