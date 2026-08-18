@@ -131,7 +131,7 @@ module SitemapAutolink
           "sitemap_autolink_entries.priority",
         )
         .filter_map do |phrase, origin, entry_id, url, content_type, priority|
-          manual = origin == SitemapAutolinkTerm.origins[:manual]
+          manual = SitemapAutolinkTerm.manual_origin?(origin)
           # The excluded-terms gate protects against generated noise; an
           # explicit manual alias is an admin decision and passes.
           next if !manual && excluded.include?(phrase)

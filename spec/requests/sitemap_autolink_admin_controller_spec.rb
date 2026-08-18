@@ -821,10 +821,16 @@ RSpec.describe SitemapAutolinkAdminController do
     # between pages — the setting beats both, and no edit made here
     # would change what a post links.
     it "does not call it a contest when a manual mapping owns the phrase" do
-      # The URL deliberately sorts AFTER both pages'. Collisions are
-      # broken by priority first and only then by URL, so a mapping that
-      # would lose an alphabetical tie-break proves it is winning on
-      # priority — the thing this behaviour actually depends on.
+      # Generated keywords, because a manual ALIAS ranks as manual too —
+      # level with a manual MAPPING — and a tie is broken by URL, which
+      # would leave the setting winning or losing by accident rather
+      # than by rank.
+      #
+      # The mapping's URL then deliberately sorts AFTER both pages'.
+      # Collisions break on priority first and only then on URL, so a
+      # mapping that would lose the alphabetical tie-break proves it won
+      # on rank — the thing this behaviour actually depends on.
+      SitemapAutolinkTerm.find_each { |t| t.update!(origin: :generated, state: :auto_active) }
       SiteSetting.sitemap_autolink_manual_mappings =
         "Widget Frame Kit,https://example.com/zz-promo/widget-frame-kit,manual"
       SitemapAutolink::Catalog.bump_version!
@@ -967,6 +973,9 @@ RSpec.describe SitemapAutolinkAdminController do
     # Nothing here outranks the setting, so the edit would disable a
     # working keyword and change no link at all.
     it "refuses when a manual mapping already owns the phrase" do
+      # Generated keywords rank below a manual mapping; manual aliases
+      # rank level with one and would be decided by the URL tie-break.
+      SitemapAutolinkTerm.find_each { |t| t.update!(origin: :generated, state: :auto_active) }
       SiteSetting.sitemap_autolink_manual_mappings =
         "Widget Frame Kit,https://example.com/zz-promo/widget-frame-kit,manual"
       SitemapAutolink::Catalog.bump_version!
@@ -979,7 +988,7 @@ RSpec.describe SitemapAutolinkAdminController do
 
       expect(response.status).to eq(422)
       expect(response.parsed_body["error"]).to include("sitemap_autolink_manual_mappings")
-      expect(rival.terms.first.reload.state).to eq("approved")
+      expect(rival.terms.first.reload.state).to eq("auto_active")
     end
 
     it "refuses a page that does not claim the phrase" do
