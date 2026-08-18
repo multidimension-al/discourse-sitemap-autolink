@@ -49,6 +49,15 @@ const UrlCount = <template>
       </p>
     {{/if}}
 
+    {{! Standing, not conditional: the page is a list of decisions, and
+    what the three states mean is the first thing it has to say. }}
+    <ul class="sitemap-autolink-admin__legend">
+      <li>{{i18n "sitemap_autolink.admin.legend_sources"}}</li>
+      <li>{{i18n "sitemap_autolink.admin.legend_index"}}</li>
+      <li>{{i18n "sitemap_autolink.admin.legend_states"}}</li>
+      <li>{{i18n "sitemap_autolink.admin.legend_discover"}}</li>
+    </ul>
+
     {{#if @controller.notice}}
       <p class="sitemap-autolink-admin__notice">{{@controller.notice}}</p>
     {{/if}}
@@ -103,6 +112,15 @@ const UrlCount = <template>
               >{{sitemap.content_type}}</span>
             </header>
 
+            {{#if sitemap.parent_url}}
+              <p class="sitemap-autolink-admin__sitemap-parent">
+                {{i18n
+                  "sitemap_autolink.admin.listed_by"
+                  url=sitemap.parent_url
+                }}
+              </p>
+            {{/if}}
+
             <p class="sitemap-autolink-admin__sitemap-meta">
               <UrlCount @sitemap={{sitemap}} />
               {{#if sitemap.entries}}
@@ -120,6 +138,25 @@ const UrlCount = <template>
                 >{{sitemap.last_error}}</span>
               {{/if}}
             </p>
+
+            {{#if (eq sitemap.kind "index")}}
+              <p class="sitemap-autolink-admin__sitemap-meta">
+                {{#if sitemap.children}}
+                  <span>{{i18n
+                      "sitemap_autolink.admin.index_children"
+                      count=sitemap.children
+                      imported=sitemap.children_imported
+                      pending=sitemap.children_pending
+                      ignored=sitemap.children_ignored
+                    }}</span>
+                {{else}}
+                  <span>{{i18n "sitemap_autolink.admin.index_unread"}}</span>
+                {{/if}}
+                {{#if sitemap.parent_url}}
+                  <span>{{i18n "sitemap_autolink.admin.index_nested"}}</span>
+                {{/if}}
+              </p>
+            {{/if}}
 
             {{#unless (eq sitemap.kind "index")}}
               <div class="sitemap-autolink-admin__sitemap-actions">

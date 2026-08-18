@@ -1,8 +1,26 @@
+import { concat, fn } from "@ember/helper";
 import { on } from "@ember/modifier";
 import { not } from "truth-helpers";
 import DButton from "discourse/ui-kit/d-button";
 import DPageSubheader from "discourse/ui-kit/d-page-subheader";
 import { i18n } from "discourse-i18n";
+
+// Why a candidate is out of the running. "not linking" alone left the
+// admin to guess between a disabled keyword, a switched-off page, one
+// that has dropped out of the sitemap and a site setting ruling it out —
+// four different fixes. The server decides which it is; this only names
+// it, so the label can never disagree with the flag beside it.
+const NotLinking = <template>
+  <span class="sitemap-autolink-admin__pill --danger">{{i18n
+      (concat "sitemap_autolink.admin.reason_" @owner.reason)
+    }}</span>
+</template>;
+
+const State = <template>
+  <span class="sitemap-autolink-admin__pill --state-{{@owner.state}}">{{i18n
+      (concat "sitemap_autolink.admin.state_" @owner.state)
+    }}</span>
+</template>;
 
 const Owners = <template>
   {{#each @owners as |owner|}}
@@ -13,9 +31,11 @@ const Owners = <template>
           owner.url
         }}</a>
       <span class="sitemap-autolink-admin__pill">{{owner.type}}</span>
-      <span
-        class="sitemap-autolink-admin__pill --state-{{owner.state}}"
-      >{{owner.state}}</span>
+      {{#if owner.linking}}
+        <State @owner={{owner}} />
+      {{else}}
+        <NotLinking @owner={{owner}} />
+      {{/if}}
     </div>
   {{/each}}
 </template>;
@@ -45,6 +65,10 @@ const Owners = <template>
       </p>
     {{/if}}
 
+    {{#if @controller.notice}}
+      <p class="sitemap-autolink-admin__notice">{{@controller.notice}}</p>
+    {{/if}}
+
     <form
       class="sitemap-autolink-admin__search"
       {{on "submit" @controller.search}}
@@ -65,10 +89,10 @@ const Owners = <template>
       <label class="sitemap-autolink-admin__competing-filter">
         <input
           type="checkbox"
-          checked={{@controller.onlyCompeting}}
-          {{on "change" @controller.toggleOnlyCompeting}}
+          checked={{@controller.includeInactive}}
+          {{on "change" @controller.toggleIncludeInactive}}
         />
-        {{i18n "sitemap_autolink.admin.only_competing"}}
+        {{i18n "sitemap_autolink.admin.include_inactive"}}
       </label>
     </form>
 
@@ -78,11 +102,18 @@ const Owners = <template>
         ({{@controller.collisions.total}})
       </h3>
       <p class="sitemap-autolink-admin__hint">
-        {{i18n
-          "sitemap_autolink.admin.collisions_summary"
-          competing=@controller.competingCount
-        }}
+        {{i18n "sitemap_autolink.admin.collisions_summary"}}
       </p>
+      {{#unless @controller.includeInactive}}
+        {{#if @controller.settledCollisions}}
+          <p class="sitemap-autolink-admin__hint">
+            {{i18n
+              "sitemap_autolink.admin.collisions_settled"
+              count=@controller.settledCollisions
+            }}
+          </p>
+        {{/if}}
+      {{/unless}}
       {{#if @controller.collisions.collisions.length}}
         {{#each @controller.collisions.collisions as |collision|}}
           <div
@@ -101,6 +132,7 @@ const Owners = <template>
                 class="sitemap-autolink-admin__candidate
                   {{if candidate.winner 'is-winner'}}
                   {{unless candidate.linking 'is-inactive'}}"
+                data-entry-id={{candidate.entry_id}}
               >
                 <a
                   href={{candidate.url}}
@@ -110,17 +142,25 @@ const Owners = <template>
                 <span
                   class="sitemap-autolink-admin__pill"
                 >{{candidate.type}}</span>
-                <span
-                  class="sitemap-autolink-admin__pill --state-{{candidate.state}}"
-                >{{candidate.state}}</span>
+                {{#if candidate.linking}}
+                  <State @owner={{candidate}} />
+                {{else}}
+                  <NotLinking @owner={{candidate}} />
+                {{/if}}
                 {{#if candidate.winner}}
                   <span class="sitemap-autolink-admin__pill --success">{{i18n
                       "sitemap_autolink.admin.collision_winner"
                     }}</span>
-                {{else if (not candidate.linking)}}
-                  <span class="sitemap-autolink-admin__pill --danger">{{i18n
-                      "sitemap_autolink.admin.not_linking"
-                    }}</span>
+                {{else if candidate.can_win}}
+                  <DButton
+                    @label="sitemap_autolink.admin.make_winner"
+                    @action={{fn
+                      @controller.resolveCollision
+                      collision
+                      candidate
+                    }}
+                    class="btn-small sitemap-autolink-admin__make-winner"
+                  />
                 {{/if}}
               </div>
             {{/each}}
@@ -158,6 +198,24 @@ const Owners = <template>
       <p class="sitemap-autolink-admin__hint">
         {{i18n "sitemap_autolink.admin.overlaps_description"}}
       </p>
+      {{#if @controller.sameDestinationCount}}
+        <p class="sitemap-autolink-admin__hint">
+          {{i18n
+            "sitemap_autolink.admin.overlaps_same_destination"
+            count=@controller.sameDestinationCount
+          }}
+        </p>
+      {{/if}}
+      {{#unless @controller.includeInactive}}
+        {{#if @controller.settledOverlaps}}
+          <p class="sitemap-autolink-admin__hint">
+            {{i18n
+              "sitemap_autolink.admin.overlaps_settled"
+              count=@controller.settledOverlaps
+            }}
+          </p>
+        {{/if}}
+      {{/unless}}
       {{#if @controller.overlaps.truncated}}
         <p class="sitemap-autolink-admin__warning">
           {{i18n "sitemap_autolink.admin.overlaps_truncated"}}

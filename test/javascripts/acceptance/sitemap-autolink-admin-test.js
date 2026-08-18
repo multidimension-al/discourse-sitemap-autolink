@@ -44,6 +44,27 @@ function statusPayload(overrides = {}) {
     entry_types: ["product", "wiki"],
     pending_sitemaps: 0,
     enabled_types_setting: "product|wiki",
+    stats: {
+      pages: {
+        total: 3,
+        live: 2,
+        disabled: 0,
+        gone: 1,
+        manual: 0,
+        by_type: { product: 1, wiki: 1 },
+      },
+      keywords: {
+        total: 4,
+        auto_active: 1,
+        approved: 1,
+        pending_review: 2,
+        disabled: 0,
+        manual: 1,
+      },
+      rules: 3,
+      contested: 1,
+      sitemaps: { imported: 2, pending: 0, ignored: 1, indexes: 1 },
+    },
     last_run: null,
     ...overrides,
   };
@@ -175,6 +196,8 @@ function collisionsPayload() {
     per_page: 50,
     pages: 1,
     competing: 1,
+    settled: 4,
+    include_inactive: false,
     collisions: [
       {
         phrase: "widget kit",
@@ -182,27 +205,42 @@ function collisionsPayload() {
         linking_candidates: 2,
         candidates: [
           {
+            term_id: 11,
+            entry_id: 1,
             url: "https://example.com/shop/widget-kit",
             title: "Widget Kit",
             type: "product",
             state: "auto_active",
+            page_state: "live",
             linking: true,
+            reason: null,
+            can_win: true,
             winner: true,
           },
           {
+            term_id: 12,
+            entry_id: 2,
             url: "https://example.com/wiki/widget-kit",
             title: "Accessories: Widget Kit",
             type: "wiki",
             state: "auto_active",
+            page_state: "live",
             linking: true,
+            reason: null,
+            can_win: true,
             winner: false,
           },
           {
+            term_id: 13,
+            entry_id: 3,
             url: "https://example.com/old/widget-kit",
             title: "Widget Kit (retired)",
             type: "wiki",
             state: "auto_active",
+            page_state: "removed",
             linking: false,
+            reason: "page_gone",
+            can_win: false,
             winner: false,
           },
         ],
@@ -218,17 +256,23 @@ function overlapsPayload() {
     per_page: 50,
     pages: 1,
     truncated: false,
+    same_destination: 6,
+    settled: 2,
+    include_inactive: false,
     overlaps: [
       {
         phrase: "widget kit",
         linking: true,
         owners: [
           {
+            entry_id: 1,
             url: "https://example.com/shop/widget-kit",
             title: "Widget Kit",
             type: "product",
             state: "approved",
+            page_state: "live",
             linking: true,
+            reason: null,
           },
         ],
         covered_by: [
@@ -237,11 +281,14 @@ function overlapsPayload() {
             linking: true,
             owners: [
               {
+                entry_id: 4,
                 url: "https://example.com/shop/acme-widget-kit-gasket-set",
                 title: "Acme Widget Kit Gasket Set",
                 type: "product",
                 state: "auto_active",
+                page_state: "live",
                 linking: true,
+                reason: null,
               },
             ],
           },
@@ -252,11 +299,14 @@ function overlapsPayload() {
         linking: false,
         owners: [
           {
+            entry_id: 12,
             url: "https://example.com/wiki/gasket-set",
             title: "gasket-set",
             type: "wiki",
             state: "pending_review",
+            page_state: "live",
             linking: false,
+            reason: "keyword_pending",
           },
         ],
         covered_by: [
@@ -265,11 +315,14 @@ function overlapsPayload() {
             linking: true,
             owners: [
               {
+                entry_id: 4,
                 url: "https://example.com/shop/acme-widget-kit-gasket-set",
                 title: "Acme Widget Kit Gasket Set",
                 type: "product",
                 state: "auto_active",
+                page_state: "live",
                 linking: true,
+                reason: null,
               },
             ],
           },
@@ -301,6 +354,10 @@ function sitemapsPayload() {
         entries: 0,
         live_entries: 0,
         gone_entries: 0,
+        children: 2,
+        children_imported: 1,
+        children_pending: 1,
+        children_ignored: 0,
       },
       {
         id: 2,
@@ -318,6 +375,10 @@ function sitemapsPayload() {
         entries: 1400,
         live_entries: 1398,
         gone_entries: 2,
+        children: 0,
+        children_imported: 0,
+        children_pending: 0,
+        children_ignored: 0,
       },
       {
         id: 3,
@@ -335,6 +396,10 @@ function sitemapsPayload() {
         entries: 0,
         live_entries: 0,
         gone_entries: 0,
+        children: 0,
+        children_imported: 0,
+        children_pending: 0,
+        children_ignored: 0,
       },
     ],
   };
@@ -411,7 +476,10 @@ function stubReads(server, helper, { status } = {}) {
     record("collisions", request, helper);
     return helper.response(state.collisions);
   });
-  server.get(`${BASE}/overlaps`, () => helper.response(state.overlaps));
+  server.get(`${BASE}/overlaps`, (request) => {
+    record("overlaps", request, helper);
+    return helper.response(state.overlaps);
+  });
   server.get(`${BASE}/sitemaps/list`, (request) => {
     record("sitemaps", request, helper);
     return helper.response(state.sitemaps);
@@ -948,6 +1016,36 @@ acceptance("Sitemap Autolink | Admin | sitemaps", function (needs) {
       );
   });
 
+  // An index imports nothing itself, so its row has to account for the
+  // decisions it created rather than leave them to be counted by eye.
+  test("an index row accounts for the decisions it created", async function (assert) {
+    await visit(SITEMAPS);
+
+    assert
+      .dom(".sitemap-autolink-admin__sitemap[data-sitemap-id='1']")
+      .includesText(
+        i18n("sitemap_autolink.admin.index_children", {
+          count: 2,
+          imported: 1,
+          pending: 1,
+          ignored: 0,
+        })
+      );
+
+    assert
+      .dom(".sitemap-autolink-admin__sitemap[data-sitemap-id='3']")
+      .includesText(
+        i18n("sitemap_autolink.admin.listed_by", {
+          url: "https://example.com/sitemap.xml",
+        }),
+        "and a child names the index that listed it, not just its indent"
+      );
+
+    assert
+      .dom(".sitemap-autolink-admin__legend")
+      .exists("the three states are explained where the decisions are made");
+  });
+
   test("imports a child sitemap only when told to", async function (assert) {
     await visit(SITEMAPS);
 
@@ -1043,7 +1141,13 @@ acceptance("Sitemap Autolink | Admin | conflicts", function (needs) {
   needs.user();
   needs.settings({ sitemap_autolink_enabled: true });
   needs.hooks.beforeEach(resetState);
-  needs.pretender((server, helper) => stubReads(server, helper));
+  needs.pretender((server, helper) => {
+    stubReads(server, helper);
+    server.post(`${BASE}/collisions/resolve`, (request) => {
+      record("resolve", request, helper);
+      return helper.response({ success: "OK", disabled: 1 });
+    });
+  });
 
   // Scoping detection to active entries made this report disagree with
   // the catalog on screen: pages visibly claiming one keyword came back
@@ -1072,16 +1176,82 @@ acceptance("Sitemap Autolink | Admin | conflicts", function (needs) {
         { count: 1 },
         "and a claimant that cannot link is shown, not dropped"
       );
+
+    // The reason names itself. It is also the one check that the reason
+    // strings the server sends still have locale keys to land on, since
+    // the template looks them up by concatenation.
+    assert
+      .dom(".sitemap-autolink-admin__candidate.is-inactive")
+      .includesText(i18n("sitemap_autolink.admin.reason_page_gone"));
+
+    // Offering it here was a footgun: the page cannot link, so handing
+    // it the keyword disabled the two that could and took the phrase
+    // offline altogether.
+    assert
+      .dom(
+        ".sitemap-autolink-admin__candidate.is-inactive .sitemap-autolink-admin__make-winner"
+      )
+      .doesNotExist("no Give it this page on a claimant that cannot link");
+
+    assert
+      .dom(".sitemap-autolink-admin__make-winner")
+      .exists({ count: 1 }, "only the live rival that is not already winning");
   });
 
-  test("can narrow to the contests that change what links", async function (assert) {
+  // Settled questions are left out by default now, so the checkbox adds
+  // them back rather than taking the noise away.
+  test("can ask for the settled ones as well", async function (assert) {
     await visit(CONFLICTS);
+
+    assert.strictEqual(
+      lastRequest("collisions").queryParams.include_inactive,
+      undefined,
+      "the default report is only what is still undecided"
+    );
+
     await click(".sitemap-autolink-admin__competing-filter input");
 
     assert.strictEqual(
-      lastRequest("collisions").queryParams.only_competing,
+      lastRequest("collisions").queryParams.include_inactive,
       "true"
     );
+    assert.strictEqual(
+      lastRequest("overlaps").queryParams.include_inactive,
+      "true",
+      "both reports, not just the one above"
+    );
+  });
+
+  test("says how many settled ones are being left out", async function (assert) {
+    await visit(CONFLICTS);
+
+    assert
+      .dom(".sitemap-autolink-admin__collisions")
+      .includesText(
+        i18n("sitemap_autolink.admin.collisions_settled", { count: 4 })
+      );
+
+    assert
+      .dom(".sitemap-autolink-admin__overlaps")
+      .includesText(
+        i18n("sitemap_autolink.admin.overlaps_same_destination", { count: 6 }),
+        "and how many contained keywords lead to the same page anyway"
+      );
+  });
+
+  test("hands a contested keyword to one page", async function (assert) {
+    await visit(CONFLICTS);
+    await click(
+      ".sitemap-autolink-admin__candidate[data-entry-id='2'] .sitemap-autolink-admin__make-winner"
+    );
+    await click(".dialog-footer .btn-primary");
+
+    const request = lastRequest("resolve");
+    assert.strictEqual(request.body.phrase, "widget kit");
+    assert.strictEqual(request.body.entry_id, "2");
+    assert
+      .dom(".sitemap-autolink-admin__notice")
+      .hasText(i18n("sitemap_autolink.admin.make_winner_done", { count: 1 }));
   });
 
   // A long title can contain several other pages' keywords; each of
@@ -1145,13 +1315,25 @@ acceptance("Sitemap Autolink | Admin | overview and logs", function (needs) {
   test("summarizes the catalog", async function (assert) {
     await visit(OVERVIEW);
 
-    assert.dom(".sitemap-autolink-admin__status p").hasText(
-      i18n("sitemap_autolink.admin.status_summary", {
-        rules: 3,
-        entries: 2,
-        pending: 2,
-      })
-    );
+    assert
+      .dom(".sitemap-autolink-admin__stat-group")
+      .exists({ count: 4 }, "pages, keywords, linking and sitemaps");
+
+    assert
+      .dom('.sitemap-autolink-admin__stat-group[data-group="pages"]')
+      .includesText(i18n("sitemap_autolink.admin.stat_pages_live"));
+
+    assert
+      .dom('.sitemap-autolink-admin__stat[data-tone="warn"]')
+      .exists(
+        { count: 3 },
+        "pages gone, keywords awaiting review and contested keywords ask for a decision"
+      );
+
+    assert
+      .dom(".sitemap-autolink-admin__stat-breakdown")
+      .includesText("product", "with the per-type breakdown");
+
     assert
       .dom(".sitemap-autolink-admin__status .sitemap-autolink-admin__warning")
       .doesNotExist("a healthy catalog raises no warnings");
@@ -1242,14 +1424,15 @@ acceptance("Sitemap Autolink | Admin | misconfiguration", function (needs) {
   test("diagnoses why nothing is being linked", async function (assert) {
     await visit(OVERVIEW);
 
-    const warnings = ".sitemap-autolink-admin__status p";
+    const warning = (name) =>
+      `.sitemap-autolink-admin__status [data-warning="${name}"]`;
     assert
-      .dom(`${warnings}:nth-of-type(2)`)
+      .dom(warning("plugin-disabled"))
       .hasText(i18n("sitemap_autolink.admin.plugin_disabled"));
     assert
-      .dom(`${warnings}:nth-of-type(3)`)
+      .dom(warning("no-sources"))
       .hasText(i18n("sitemap_autolink.admin.no_sources"));
-    assert.dom(`${warnings}:nth-of-type(4)`).hasText(
+    assert.dom(warning("no-rules")).hasText(
       i18n("sitemap_autolink.admin.no_rules_hint", {
         entry_types: "product",
         allowed: "wiki",
