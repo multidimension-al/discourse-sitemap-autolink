@@ -5,6 +5,11 @@
 # appear in the sitemap (absolute); manually created entries may use
 # forum-relative URLs.
 class SitemapAutolinkEntry < ActiveRecord::Base
+  # Replaced by the sitemaps association below — one URL is routinely
+  # listed in several sitemaps, which a column cannot hold. Ignored here
+  # so nothing selects it before the post-deployment migration drops it.
+  self.ignored_columns = %w[sitemap_url]
+
   has_many :terms,
            class_name: "SitemapAutolinkTerm",
            foreign_key: :entry_id,
