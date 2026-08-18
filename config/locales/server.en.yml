@@ -1,7 +1,7 @@
 en:
   site_settings:
     sitemap_autolink_enabled: "Enable automatic internal linking (server-side, applied during post cooking)."
-    sitemap_autolink_sources: "Sitemaps to ingest, one per entry as 'https://example.com/sitemap.xml,content_type'. Sitemap indexes are expanded automatically; the content type labels every URL from that source (e.g. product, wiki, docs)."
+    sitemap_autolink_sources: "Sitemaps to ingest, one per entry as 'https://example.com/sitemap.xml,content_type'. A sitemap index is not imported wholesale: its child sitemaps are listed on the plugin's Sitemaps page with their URL counts, and each one is imported only once you approve it there. The content type labels every URL from that source (e.g. product, wiki, docs)."
     sitemap_autolink_manual_mappings: "Manual phrase mappings, one per entry as 'phrase,url,type'. These rank as manual overrides. Relative URLs resolve against this forum's origin."
     sitemap_autolink_max_links_per_destination_per_post: "How many times each destination URL may be auto-linked within a single post (first occurrences win). 0 = unlimited."
     sitemap_autolink_max_links_per_post: "Total automatic links allowed per post across all destinations. 0 = unlimited."
@@ -16,6 +16,7 @@ en:
     sitemap_autolink_title_suffixes: "Suffixes stripped from the end of fetched page titles, one per entry (e.g. ' - Example Shop'). An entry cannot contain the | list separator — enter such suffixes as fragments ('- Example Wiki' and 'Example.com'); connector punctuation (|, -, :, ·) left dangling after a strip is removed automatically, so fragments compose."
     sitemap_autolink_excluded_url_patterns: "Sitemap URLs matching any of these patterns are never ingested. Plain text matches as a substring; use * as a wildcard (e.g. '*/checkout*', 'https://example.com/tag/*')."
     sitemap_autolink_excluded_terms: "Phrases that must never be auto-generated as link terms. Manual aliases override this list."
+    sitemap_autolink_auto_import_new_sitemaps: "Import child sitemaps found inside a sitemap index as soon as they are discovered, instead of listing them on the Sitemaps page for approval first. Leave off unless you are certain every child belongs in the link catalog — an index often lists sitemaps holding tens of thousands of URLs."
     sitemap_autolink_sync_enabled: "Run the daily sitemap-to-catalog synchronization job."
     sitemap_autolink_page_fetch_delay_ms: "Milliseconds to pause between page fetches when the sync resolves titles (new/changed URLs only). Keeps a first import of thousands of URLs from looking like a scraping burst to the target site's firewall. 0 = no delay."
     sitemap_autolink_sync_time_budget_minutes: "Maximum minutes one synchronization run may spend before stopping cleanly (recorded in the run history); the next run resumes the remaining work. Prevents slow or tarpitting servers from pinning a sync forever."

@@ -68,6 +68,14 @@ export default class AdminPluginsShowSitemapAutolinkKeywordsController extends C
     return this.data?.linking_count || 0;
   }
 
+  // Pages that vanished from the sitemap and are still being kept.
+  // They never link, so they are dead weight in a catalog that has been
+  // re-pointed at different sitemaps — and until now there was no way
+  // to be rid of them.
+  get gonePages() {
+    return this.data?.gone_pages || 0;
+  }
+
   get pageDisplay() {
     return `${this.page + 1} / ${Math.max(this.data?.pages || 1, 1)}`;
   }
@@ -194,6 +202,54 @@ export default class AdminPluginsShowSitemapAutolinkKeywordsController extends C
               },
             },
           });
+          await this.load();
+        } catch (e) {
+          popupAjaxError(e);
+        }
+      },
+    });
+  }
+
+  // Deletion, not disabling: the page and its keywords are forgotten
+  // entirely, so a URL that later returns to the sitemap is ingested as
+  // a brand new page rather than resurrecting old review decisions.
+  @action
+  purgeGone() {
+    const count = this.gonePages;
+    if (count === 0) {
+      return;
+    }
+    this.dialog.yesNoConfirm({
+      message: i18n("sitemap_autolink.admin.purge_gone_confirm", { count }),
+      didConfirm: async () => {
+        try {
+          await ajax(`${BASE}/entries/purge`, {
+            type: "DELETE",
+            data: {
+              filter: {
+                q: this.query,
+                type: this.typeFilter,
+                sitemap: this.sitemapFilter,
+              },
+            },
+          });
+          await this.load();
+        } catch (e) {
+          popupAjaxError(e);
+        }
+      },
+    });
+  }
+
+  @action
+  purgeEntry(entry) {
+    this.dialog.yesNoConfirm({
+      message: i18n("sitemap_autolink.admin.purge_entry_confirm", {
+        url: entry.url,
+      }),
+      didConfirm: async () => {
+        try {
+          await ajax(`${BASE}/entries/${entry.id}`, { type: "DELETE" });
           await this.load();
         } catch (e) {
           popupAjaxError(e);

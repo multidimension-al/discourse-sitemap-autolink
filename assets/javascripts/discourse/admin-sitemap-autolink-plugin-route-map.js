@@ -8,6 +8,7 @@ export default {
   // a single "Catalog" page.
   map() {
     this.route("discourse-sitemap-autolink-overview", { path: "overview" });
+    this.route("discourse-sitemap-autolink-sitemaps", { path: "sitemaps" });
     this.route("discourse-sitemap-autolink-keywords", { path: "keywords" });
     this.route("discourse-sitemap-autolink-conflicts", { path: "conflicts" });
     this.route("discourse-sitemap-autolink-logs", { path: "logs" });

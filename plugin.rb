@@ -28,6 +28,8 @@ after_initialize do
   require_relative "lib/sitemap_autolink/sitemap_sync"
   require_relative "app/models/sitemap_autolink_entry"
   require_relative "app/models/sitemap_autolink_term"
+  require_relative "app/models/sitemap_autolink_sitemap"
+  require_relative "app/models/sitemap_autolink_entry_sitemap"
   require_relative "app/models/sitemap_autolink_sync_run"
   require_relative "app/jobs/scheduled/sitemap_autolink_sync"
   require_relative "app/jobs/regular/sitemap_autolink_rebake_posts"
@@ -65,7 +67,7 @@ after_initialize do
     # URL needs an explicit Rails route rendering the app shell (same
     # pattern as discourse-subscriptions). "catalog" is the single page
     # these four replaced; its Ember route redirects to the overview.
-    %w[overview keywords conflicts logs catalog].each do |page|
+    %w[overview sitemaps keywords conflicts logs catalog].each do |page|
       get "/admin/plugins/discourse-sitemap-autolink/#{page}" => "admin/plugins#index",
           :constraints => StaffConstraint.new
     end
@@ -87,7 +89,13 @@ after_initialize do
           } do
       get "entries" => "sitemap_autolink_admin#entries"
       post "entries" => "sitemap_autolink_admin#create_entry"
+      # Before the :id route, or "purge" is read as an entry id.
+      delete "entries/purge" => "sitemap_autolink_admin#purge_entries"
       put "entries/:id" => "sitemap_autolink_admin#update_entry"
+      delete "entries/:id" => "sitemap_autolink_admin#destroy_entry"
+      get "sitemaps" => "sitemap_autolink_admin#sitemaps"
+      post "sitemaps/discover" => "sitemap_autolink_admin#discover_sitemaps"
+      put "sitemaps/:id" => "sitemap_autolink_admin#update_sitemap"
       get "terms" => "sitemap_autolink_admin#terms"
       post "terms" => "sitemap_autolink_admin#create_term"
       put "terms/bulk" => "sitemap_autolink_admin#bulk_terms"

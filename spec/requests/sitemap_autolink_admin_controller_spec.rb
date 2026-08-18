@@ -22,6 +22,20 @@ RSpec.describe SitemapAutolinkAdminController do
     SitemapAutolink::Catalog.reset_cache!
   end
 
+  # Record that a sitemap lists an entry, creating the sitemap if the
+  # test has not named it before.
+  def list_in(entry, sitemap_url, status: "enabled", **attrs)
+    sitemap =
+      SitemapAutolinkSitemap.find_or_create_by!(url: sitemap_url) do |record|
+        record.status = status
+        record.kind = "urlset"
+        record.content_type = entry&.content_type || "content"
+        record.assign_attributes(attrs)
+      end
+    SitemapAutolinkEntrySitemap.create!(entry_id: entry.id, sitemap_id: sitemap.id) if entry
+    sitemap
+  end
+
   describe "access" do
     it "is invisible to anonymous visitors and ordinary members" do
       get "#{base}/status"
@@ -140,8 +154,8 @@ RSpec.describe SitemapAutolinkAdminController do
     # A site can feed the plugin several sitemaps, and "show me only the
     # one I just changed" is not answerable by searching text.
     it "filters by the sitemap an entry came out of" do
-      entry.update!(sitemap_url: "https://example.com/sitemap-products.xml")
-      wiki_entry.update!(sitemap_url: "https://example.com/sitemap-wiki.xml")
+      list_in(entry, "https://example.com/sitemap-products.xml")
+      list_in(wiki_entry, "https://example.com/sitemap-wiki.xml")
 
       get "#{base}/entries"
       expect(response.parsed_body["sitemaps"]).to eq(
@@ -152,10 +166,28 @@ RSpec.describe SitemapAutolinkAdminController do
       expect(response.parsed_body["entries"].map { |e| e["id"] }).to eq([wiki_entry.id])
     end
 
+    # The same URL is routinely listed in more than one sitemap; it has
+    # to be findable under either of them, and to say so on its card.
+    it "finds a page listed in two sitemaps under both of them" do
+      list_in(entry, "https://example.com/sitemap-products.xml")
+      list_in(entry, "https://example.com/sitemap-featured.xml")
+      list_in(wiki_entry, "https://example.com/sitemap-wiki.xml")
+
+      get "#{base}/entries", params: { sitemap: "https://example.com/sitemap-featured.xml" }
+      found = response.parsed_body["entries"]
+      expect(found.map { |e| e["id"] }).to eq([entry.id])
+      expect(found.first["sitemaps"]).to eq(
+        ["https://example.com/sitemap-featured.xml", "https://example.com/sitemap-products.xml"],
+      )
+
+      get "#{base}/entries", params: { sitemap: "https://example.com/sitemap-products.xml" }
+      expect(response.parsed_body["entries"].map { |e| e["id"] }).to eq([entry.id])
+    end
+
     it "keeps a bulk change inside the sitemap filter" do
-      entry.update!(sitemap_url: "https://example.com/sitemap-products.xml")
+      list_in(entry, "https://example.com/sitemap-products.xml")
       entry.terms.create!(phrase: "Widget Frame Kit", origin: :generated, state: :auto_active)
-      wiki_entry.update!(sitemap_url: "https://example.com/sitemap-wiki.xml")
+      list_in(wiki_entry, "https://example.com/sitemap-wiki.xml")
       wiki_entry.terms.create!(phrase: "Gasket Lore", origin: :generated, state: :auto_active)
 
       put "#{base}/terms/bulk",
@@ -625,6 +657,182 @@ RSpec.describe SitemapAutolinkAdminController do
 
       get "#{base}/collisions", params: { page: 3 }
       expect(response.parsed_body["collisions"]).to be_empty
+    end
+  end
+
+  describe "#sitemaps" do
+    before { sign_in(admin) }
+
+    fab!(:wiki_entry) do
+      SitemapAutolinkEntry.create!(
+        url: "https://example.com/wiki/gasket-lore",
+        title: "Gasket Lore",
+        content_type: "wiki",
+        source: "sitemap",
+        title_source: "page",
+      )
+    end
+
+    it "lists each configured source with the children found inside it" do
+      index = list_in(nil, "https://example.com/sitemap.xml", kind: "index", configured: true)
+      child = list_in(entry, "https://example.com/sitemap-products.xml")
+      child.update!(parent_url: index.url, url_count: 1_400)
+      waiting = list_in(nil, "https://example.com/sitemap-tags.xml", status: "pending")
+      waiting.update!(parent_url: index.url, url_count: 41_000, url_count_partial: true)
+
+      get "#{base}/sitemaps"
+      body = response.parsed_body
+      expect(body["pending"]).to eq(1)
+      # The index first, then its own children beneath it.
+      expect(body["sitemaps"].map { |s| s["url"] }).to eq(
+        [
+          "https://example.com/sitemap.xml",
+          "https://example.com/sitemap-products.xml",
+          "https://example.com/sitemap-tags.xml",
+        ],
+      )
+      products = body["sitemaps"].find { |s| s["url"].include?("products") }
+      expect(products["entries"]).to eq(1)
+      expect(products["live_entries"]).to eq(1)
+      tags = body["sitemaps"].find { |s| s["url"].include?("tags") }
+      # The size is the whole point of listing it before importing it.
+      expect(tags["url_count"]).to eq(41_000)
+      expect(tags["url_count_partial"]).to eq(true)
+      expect(tags["status"]).to eq("pending")
+    end
+
+    it "approves a sitemap for import" do
+      sitemap = list_in(nil, "https://example.com/sitemap-tags.xml", status: "pending")
+
+      put "#{base}/sitemaps/#{sitemap.id}", params: { status: "enabled" }
+      expect(response.status).to eq(200)
+      expect(sitemap.reload.status).to eq("enabled")
+    end
+
+    it "rejects a status it does not recognise" do
+      sitemap = list_in(nil, "https://example.com/sitemap-tags.xml", status: "pending")
+      put "#{base}/sitemaps/#{sitemap.id}", params: { status: "maybe" }
+      expect(response.status).to eq(400)
+    end
+
+    # Turning a sitemap off has to take effect now, not at the next sync
+    # — otherwise its pages sit there looking imported and linking.
+    it "marks pages gone when the only sitemap listing them stops importing" do
+      sitemap = list_in(entry, "https://example.com/sitemap-products.xml")
+
+      put "#{base}/sitemaps/#{sitemap.id}", params: { status: "ignored" }
+      expect(response.parsed_body["orphaned"]).to eq(1)
+      expect(entry.reload.removed_from_source).to eq(true)
+      expect(SitemapAutolinkEntry.exists?(entry.id)).to eq(true)
+    end
+
+    # A page listed elsewhere too is NOT gone; it just lost one listing.
+    it "leaves a page alone when another sitemap still lists it" do
+      sitemap = list_in(entry, "https://example.com/sitemap-products.xml")
+      list_in(entry, "https://example.com/sitemap-featured.xml")
+
+      put "#{base}/sitemaps/#{sitemap.id}", params: { status: "ignored" }
+      expect(response.parsed_body["orphaned"]).to eq(0)
+      expect(entry.reload.removed_from_source).to eq(false)
+    end
+
+    it "deletes the pages a sitemap brought in when asked to purge" do
+      sitemap = list_in(entry, "https://example.com/sitemap-products.xml")
+      entry.terms.create!(phrase: "Widget Frame Kit", origin: :generated, state: :auto_active)
+      list_in(wiki_entry, "https://example.com/sitemap-wiki.xml")
+
+      put "#{base}/sitemaps/#{sitemap.id}", params: { status: "ignored", purge: "true" }
+      expect(response.parsed_body["purged"]).to eq(1)
+      expect(SitemapAutolinkEntry.exists?(entry.id)).to eq(false)
+      expect(SitemapAutolinkTerm.where(entry_id: entry.id)).to be_empty
+      # Only the pages that sitemap brought in.
+      expect(SitemapAutolinkEntry.exists?(wiki_entry.id)).to eq(true)
+    end
+  end
+
+  describe "#purge_entries" do
+    before { sign_in(admin) }
+
+    fab!(:gone_entry) do
+      SitemapAutolinkEntry.create!(
+        url: "https://example.com/shop/discontinued",
+        title: "Discontinued Widget",
+        content_type: "product",
+        source: "sitemap",
+        title_source: "page",
+        removed_from_source: true,
+      )
+    end
+
+    it "deletes only the pages that are gone from the sitemap" do
+      gone_entry.terms.create!(phrase: "Discontinued Widget", origin: :generated, state: :auto_active)
+
+      get "#{base}/entries"
+      expect(response.parsed_body["gone_pages"]).to eq(1)
+
+      delete "#{base}/entries/purge"
+      expect(response.parsed_body["purged"]).to eq(1)
+      expect(SitemapAutolinkEntry.exists?(gone_entry.id)).to eq(false)
+      expect(SitemapAutolinkTerm.where(entry_id: gone_entry.id)).to be_empty
+      # A live page is never touched by a purge.
+      expect(SitemapAutolinkEntry.exists?(entry.id)).to eq(true)
+    end
+
+    it "purges within the current filter only" do
+      other =
+        SitemapAutolinkEntry.create!(
+          url: "https://example.com/wiki/retired-lore",
+          title: "Retired Lore",
+          content_type: "wiki",
+          source: "sitemap",
+          title_source: "page",
+          removed_from_source: true,
+        )
+
+      delete "#{base}/entries/purge", params: { filter: { type: "wiki" } }
+      expect(response.parsed_body["purged"]).to eq(1)
+      expect(SitemapAutolinkEntry.exists?(other.id)).to eq(false)
+      expect(SitemapAutolinkEntry.exists?(gone_entry.id)).to eq(true)
+    end
+
+    it "purges within the sitemap filter only" do
+      list_in(gone_entry, "https://example.com/sitemap-products.xml")
+      other =
+        SitemapAutolinkEntry.create!(
+          url: "https://example.com/wiki/retired-lore",
+          title: "Retired Lore",
+          content_type: "wiki",
+          source: "sitemap",
+          title_source: "page",
+          removed_from_source: true,
+        )
+      list_in(other, "https://example.com/sitemap-wiki.xml")
+
+      delete "#{base}/entries/purge",
+             params: {
+               filter: {
+                 sitemap: "https://example.com/sitemap-wiki.xml",
+               },
+             }
+      expect(response.parsed_body["purged"]).to eq(1)
+      expect(SitemapAutolinkEntry.exists?(other.id)).to eq(false)
+      expect(SitemapAutolinkEntry.exists?(gone_entry.id)).to eq(true)
+    end
+
+    # Purged means forgotten: nothing remembers the URL, so a sync that
+    # meets it again ingests it as a page it has never seen.
+    it "forgets a purged URL completely, so it comes back as new" do
+      list_in(gone_entry, "https://example.com/sitemap-products.xml")
+      delete "#{base}/entries/purge"
+
+      expect(SitemapAutolinkEntry.find_by(url: gone_entry.url)).to be_nil
+      expect(SitemapAutolinkEntrySitemap.where(entry_id: gone_entry.id)).to be_empty
+    end
+
+    it "purges a single page from its card" do
+      delete "#{base}/entries/#{gone_entry.id}"
+      expect(response.status).to eq(200)
+      expect(SitemapAutolinkEntry.exists?(gone_entry.id)).to eq(false)
     end
   end
 

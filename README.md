@@ -30,11 +30,13 @@ sitemaps ──▶ daily sync job ──▶ catalog (entries + phrases) ──�
 ```
 
 1. **Sync.** A scheduled job (or the admin "Sync now" button) fetches
-   your configured sitemaps — sitemap indexes are expanded
-   automatically — and diffs them against the stored catalog by URL and
-   `lastmod`. Only new or changed URLs get a page fetch to resolve the
-   `<title>`; unchanged entries cost nothing. Vanished URLs are marked
-   removed (and reactivate if they come back).
+   your configured sitemaps and diffs them against the stored catalog by
+   URL and `lastmod`. Only new or changed URLs get a page fetch to
+   resolve the `<title>`; unchanged entries cost nothing. Vanished URLs
+   are marked removed (and reactivate if they come back). A sitemap
+   *index* is not imported wholesale: the child sitemaps inside it are
+   listed with their URL counts on the **Sitemaps** page and imported
+   only once you approve them.
 2. **Phrase generation.** Each page title produces conservative
    matching phrases: the title itself, plural/singular variants,
    "&"/"and" variants, parenthetical- and prefix-trimmed forms.
@@ -234,17 +236,23 @@ is off) — it does nothing until you enable it, so installing is safe.
    used for priorities, CSS classes, and analytics. Add your site's
    `<title>` boilerplate to `sitemap_autolink_title_suffixes` (e.g.
    ` - Example Shop`) so stored titles are clean.
-4. **Preview, then sync.** On the admin page (Admin → Plugins →
-   Sitemap Autolink → Catalog), run **Preview (dry run)** to see
+4. **Choose which sitemaps to import.** If a source is a sitemap
+   index, open **Sitemaps**, press **Read sitemaps**, and you get one
+   row per child with its URL count. Approve the ones that belong in a
+   link catalog and ignore the rest — nothing from an unapproved child
+   is imported, so an index listing a 40,000-URL tag sitemap costs you
+   nothing.
+5. **Preview, then sync.** On the admin page (Admin → Plugins →
+   Sitemap Autolink → Overview), run **Preview (dry run)** to see
    exactly what would be ingested — URL counts, exclusions, resolved
    titles, proposed phrases — without writing anything. Then **Sync
    now**, or enable `sitemap_autolink_sync_enabled` for the daily job.
-5. **Review.** Work through the pending-phrases queue and the
+6. **Review.** Work through the pending-phrases queue and the
    collision report on the same page. Optionally restrict
    `sitemap_autolink_enabled_types` while a large content type is
    under review, and enable `sitemap_autolink_auto_rebake_on_changes`
    once you trust the flow.
-6. **Catch up old posts.** New and edited posts link immediately;
+7. **Catch up old posts.** New and edited posts link immediately;
    existing posts keep their current HTML until rebaked. Once the
    catalog looks right, press **Rebake matching posts** on the admin
    page to rebake everything that may contain an active phrase, in
@@ -252,7 +260,7 @@ is off) — it does nothing until you enable it, so installing is safe.
 
 ## The admin pages
 
-**Admin → Plugins → Sitemap Autolink** has four pages, one per concern,
+**Admin → Plugins → Sitemap Autolink** has five pages, one per concern,
 each with its own URL and its own data load. A few thousand sitemap URLs
 produce tens of thousands of keywords, so every list is paged and
 searched on the server.
@@ -271,6 +279,28 @@ searched on the server.
     phrase, as one self-continuing background job in throttled batches
     (`sitemap_autolink_max_rebakes_per_job_run` per minute). Post
     content is never modified — only the rendered HTML refreshes.
+- **Sitemaps** — every sitemap the plugin has read, and which of them
+  it is allowed to import. Configured sources sit at the top level with
+  the children found inside them indented beneath, each row carrying its
+  kind (index or URL list), content type, URL count and how many pages
+  it has contributed.
+
+  Naming a sitemap index in settings says which sitemaps *exist*, not
+  which ones belong in a link catalog — and an index routinely lists
+  children holding tens of thousands of URLs that would be pointless to
+  import. So a newly discovered child is **recorded, fetched once to
+  count it, and left awaiting a decision**; none of its URLs are
+  ingested until you press **Import this sitemap**. **Read sitemaps**
+  runs that discovery on demand without importing anything.
+  `sitemap_autolink_auto_import_new_sitemaps` restores the old
+  import-everything behaviour if you want it.
+
+  Stopping an import asks which you meant: **Stop importing** keeps the
+  pages (they become *gone from sitemap*, stop linking, and return if
+  you re-import), while **Stop and delete its pages** purges everything
+  that came only from that sitemap. A page listed in another sitemap
+  too is never affected either way.
+
 - **Keywords** — the catalog, **grouped by destination**: one card per
   ingested page carrying every keyword that points at it — title and
   type, the URL, the keywords as chips you can approve, disable, restore
@@ -294,9 +324,20 @@ searched on the server.
   Feeding the plugin several sitemaps? A **sitemap filter** narrows the
   list to the one a page came out of — the child sitemap when the source
   is an index, since that is the document that actually listed the URL.
+  Sitemaps overlap, so a page is recorded under **every** sitemap that
+  lists it, found under any of them, and its card names them all.
   Entries ingested before this was recorded fill it in the next time a
   sync sees their URL, and the filter only appears once there is more
-  than nothing to choose from. **Bulk actions address the whole current filter**, not the cards
+  than nothing to choose from.
+
+  Pages that vanished from your sitemaps are kept, not deleted, so they
+  come back intact if the URL returns. When they are not coming back,
+  **Delete N gone pages** purges them for good — the page and its
+  keywords are forgotten entirely, so a URL that does turn up again is
+  ingested as a page the plugin has never seen. The button appears only
+  when there are such pages, names the count, and respects the current
+  search, type and sitemap filters; single pages have their own delete
+  button on the card. **Bulk actions address the whole current filter**, not the cards
   on screen — a review queue of thousands is cleared in one confirmed
   click, and the confirmation names the exact count first. The review
   queue is this page filtered to *Awaiting review*.
@@ -391,10 +432,17 @@ The sync is built to be a polite, bounded, observable crawler:
   most pages.
 - **Strict about inputs.** Only absolute `http(s)` URLs are ingested —
   anything else in a `<loc>` is malformed (or malicious) and is
-  counted as excluded. A sitemap index expands to at most 100 child
+  counted as excluded. A sitemap index is read for at most 100 child
   sitemaps per source; a larger index is processed to the cap and the
   run records itself as **Partial**, so the unprocessed tail is never
-  mistaken for deleted pages.
+  mistaken for deleted pages. Nested indexes are recorded but not
+  recursed into — add one as its own source if you want its children.
+- **Child sitemaps are opt-in.** Only children you approved are
+  fetched and imported; approved ones are read every run, one awaiting
+  a decision is read once (to count it) and then left alone, and an
+  ignored one is never fetched again. A child whose URLs are already in
+  the catalog is adopted as approved rather than held, so upgrading an
+  existing install never un-imports what it was already importing.
 - **Politeness delay** between page fetches
   (`sitemap_autolink_page_fetch_delay_ms`), and a hard **30-second cap
   per fetch** (shared across redirects, max 3), with no hidden HTTP

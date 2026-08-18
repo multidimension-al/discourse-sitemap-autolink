@@ -6,6 +6,7 @@ import { i18n } from "discourse-i18n";
 const PLUGIN_ID = "discourse-sitemap-autolink";
 const BASE = `/admin/plugins/${PLUGIN_ID}`;
 const OVERVIEW = `${BASE}/overview`;
+const SITEMAPS = `${BASE}/sitemaps`;
 const KEYWORDS = `${BASE}/keywords`;
 const CONFLICTS = `${BASE}/conflicts`;
 const LOGS = `${BASE}/logs`;
@@ -41,6 +42,7 @@ function statusPayload(overrides = {}) {
     terms: 4,
     pending_terms: 2,
     entry_types: ["product", "wiki"],
+    pending_sitemaps: 0,
     enabled_types_setting: "product|wiki",
     last_run: null,
     ...overrides,
@@ -120,6 +122,7 @@ function entriesPayload() {
       disabled: 1,
     },
     linking_count: 2,
+    gone_pages: 0,
     entries: [
       {
         id: 11,
@@ -131,7 +134,11 @@ function entriesPayload() {
         auto_discovered: true,
         removed_from_source: false,
         title_source: "title",
-        source: "https://example.com/sitemap.xml",
+        source: "sitemap",
+        sitemaps: [
+          "https://example.com/sitemap-featured.xml",
+          "https://example.com/sitemap-products.xml",
+        ],
         last_seen_at: "2026-08-16T10:00:00.000Z",
         terms: [
           term(101, "Widget Kit", "approved", { duplicate: true }),
@@ -152,7 +159,8 @@ function entriesPayload() {
         auto_discovered: true,
         removed_from_source: false,
         title_source: "slug",
-        source: "https://example.com/sitemap.xml",
+        source: "sitemap",
+        sitemaps: ["https://example.com/sitemap-wiki.xml"],
         last_seen_at: "2026-08-16T10:00:00.000Z",
         terms: [term(105, "gasket set", "approved", { entry_id: 12 })],
       },
@@ -271,6 +279,67 @@ function overlapsPayload() {
   };
 }
 
+function sitemapsPayload() {
+  return {
+    pending: 1,
+    auto_import: false,
+    configured_sources: ["https://example.com/sitemap.xml,product"],
+    sitemaps: [
+      {
+        id: 1,
+        url: "https://example.com/sitemap.xml",
+        parent_url: null,
+        content_type: "product",
+        kind: "index",
+        status: "enabled",
+        configured: true,
+        url_count: 0,
+        url_count_partial: false,
+        last_seen_at: "2026-08-16T10:00:00.000Z",
+        last_fetched_at: "2026-08-16T10:00:00.000Z",
+        last_error: null,
+        entries: 0,
+        live_entries: 0,
+        gone_entries: 0,
+      },
+      {
+        id: 2,
+        url: "https://example.com/sitemap-products.xml",
+        parent_url: "https://example.com/sitemap.xml",
+        content_type: "product",
+        kind: "urlset",
+        status: "enabled",
+        configured: false,
+        url_count: 1400,
+        url_count_partial: false,
+        last_seen_at: "2026-08-16T10:00:00.000Z",
+        last_fetched_at: "2026-08-16T10:00:00.000Z",
+        last_error: null,
+        entries: 1400,
+        live_entries: 1398,
+        gone_entries: 2,
+      },
+      {
+        id: 3,
+        url: "https://example.com/sitemap-tags.xml",
+        parent_url: "https://example.com/sitemap.xml",
+        content_type: "product",
+        kind: "urlset",
+        status: "pending",
+        configured: false,
+        url_count: 41000,
+        url_count_partial: true,
+        last_seen_at: "2026-08-16T10:00:00.000Z",
+        last_fetched_at: "2026-08-16T10:00:00.000Z",
+        last_error: null,
+        entries: 0,
+        live_entries: 0,
+        gone_entries: 0,
+      },
+    ],
+  };
+}
+
 function previewPayload() {
   return {
     errors: [],
@@ -327,6 +396,7 @@ function resetState() {
     entries: entriesPayload(),
     collisions: collisionsPayload(),
     overlaps: overlapsPayload(),
+    sitemaps: sitemapsPayload(),
   };
   requests = [];
 }
@@ -342,6 +412,10 @@ function stubReads(server, helper, { status } = {}) {
     return helper.response(state.collisions);
   });
   server.get(`${BASE}/overlaps`, () => helper.response(state.overlaps));
+  server.get(`${BASE}/sitemaps`, (request) => {
+    record("sitemaps", request, helper);
+    return helper.response(state.sitemaps);
+  });
 
   server.get(`${BASE}/entries`, (request) => {
     record("entries", request, helper);
@@ -378,11 +452,13 @@ acceptance("Sitemap Autolink | Admin | navigation", function (needs) {
 
     const nav = ".admin-plugin-config-page__top-nav-item a";
 
-    ["overview", "keywords", "conflicts", "logs"].forEach((page) => {
-      assert
-        .dom(`${nav}[href="${BASE}/${page}"]`)
-        .hasText(i18n(`sitemap_autolink.admin.nav.${page}`));
-    });
+    ["overview", "sitemaps", "keywords", "conflicts", "logs"].forEach(
+      (page) => {
+        assert
+          .dom(`${nav}[href="${BASE}/${page}"]`)
+          .hasText(i18n(`sitemap_autolink.admin.nav.${page}`));
+      }
+    );
 
     assert
       .dom(`${nav}[href="${BASE}/catalog"]`)
@@ -472,6 +548,17 @@ acceptance("Sitemap Autolink | Admin | keywords", function (needs) {
         ...entry,
         enabled: helper.parsePostData(request.requestBody).enabled === "true",
       });
+    });
+
+    server.delete(`${BASE}/entries/purge`, (request) => {
+      record("purge", request, helper);
+      state.entries = { ...state.entries, gone_pages: 0 };
+      return helper.response({ success: "OK", purged: 2 });
+    });
+
+    server.delete(`${BASE}/entries/:id`, (request) => {
+      record("purge-entry", request, helper);
+      return helper.response({ success: "OK" });
     });
   });
 
@@ -754,6 +841,166 @@ acceptance("Sitemap Autolink | Admin | keywords", function (needs) {
     assert
       .dom(".sitemap-autolink-admin__empty")
       .hasText(i18n("sitemap_autolink.admin.no_entries"));
+  });
+  // A page that dropped out of the sitemap keeps its keywords and links
+  // nothing. That is right as a default and wrong as the only option:
+  // a catalog re-pointed at different sitemaps fills with pages that
+  // will never come back, so they have to be deletable.
+  test("offers to delete the pages that are gone from the sitemap", async function (assert) {
+    state.entries = { ...entriesPayload(), gone_pages: 2 };
+    await visit(KEYWORDS);
+
+    assert
+      .dom(".sitemap-autolink-admin__purge-gone")
+      .hasText(
+        i18n("sitemap_autolink.admin.purge_gone", { count: 2 }),
+        "the button names how many it would delete"
+      );
+
+    await click(".sitemap-autolink-admin__purge-gone");
+    await click(".dialog-footer .btn-primary");
+
+    const purge = lastRequest("purge");
+    assert.ok(purge, "it deletes rather than disabling");
+  });
+
+  test("hides the delete button when nothing is gone", async function (assert) {
+    await visit(KEYWORDS);
+    assert.dom(".sitemap-autolink-admin__purge-gone").doesNotExist();
+  });
+
+  // The same URL is often listed in more than one sitemap, so a card
+  // that named only one of them would be wrong.
+  test("names every sitemap a page is listed in", async function (assert) {
+    await visit(KEYWORDS);
+
+    assert
+      .dom(
+        ".sitemap-autolink-admin__entry[data-entry-id='11'] .sitemap-autolink-admin__entry-sitemaps"
+      )
+      .includesText("sitemap-featured.xml")
+      .includesText("sitemap-products.xml");
+  });
+});
+
+acceptance("Sitemap Autolink | Admin | sitemaps", function (needs) {
+  needs.user();
+  needs.settings({ sitemap_autolink_enabled: true });
+  needs.hooks.beforeEach(resetState);
+
+  needs.pretender((server, helper) => {
+    stubReads(server, helper);
+
+    server.put(`${BASE}/sitemaps/:id`, (request) => {
+      record("sitemap", request, helper);
+      const id = parseInt(request.params.id, 10);
+      const data = helper.parsePostData(request.requestBody);
+      state.sitemaps = {
+        ...state.sitemaps,
+        pending: 0,
+        sitemaps: state.sitemaps.sitemaps.map((s) =>
+          s.id === id ? { ...s, status: data.status } : s
+        ),
+      };
+      return helper.response({ success: "OK", orphaned: 0, purged: 0 });
+    });
+
+    server.post(`${BASE}/sitemaps/discover`, (request) => {
+      record("discover", request, helper);
+      return helper.response({ success: "OK", errors: [], notes: [] });
+    });
+  });
+
+  // Naming an index in a setting says nothing about which of the
+  // sitemaps inside it belong in a link catalog. This page is where
+  // that is decided, so it has to show the children AND their sizes.
+  test("shows an index's children with their sizes", async function (assert) {
+    await visit(SITEMAPS);
+
+    assert
+      .dom(".sitemap-autolink-admin__sitemap")
+      .exists({ count: 3 }, "the index and both of its children");
+
+    assert
+      .dom(".sitemap-autolink-admin__sitemap[data-sitemap-id='3']")
+      .hasClass("--child", "children are indented under their index")
+      .hasAttribute("data-status", "pending");
+
+    assert
+      .dom(
+        ".sitemap-autolink-admin__sitemap[data-sitemap-id='3'] .sitemap-autolink-admin__sitemap-count"
+      )
+      .includesText(
+        "41000+",
+        "a truncated count reads as a floor, not a total"
+      );
+
+    assert
+      .dom(".sitemap-autolink-admin__warning")
+      .includesText(
+        i18n("sitemap_autolink.admin.pending_sitemaps", { count: 1 }),
+        "and says plainly that nothing from it was imported"
+      );
+  });
+
+  test("imports a child sitemap only when told to", async function (assert) {
+    await visit(SITEMAPS);
+
+    const pending = ".sitemap-autolink-admin__sitemap[data-sitemap-id='3']";
+    assert.dom(`${pending} .sitemap-autolink-admin__import`).exists();
+
+    await click(`${pending} .sitemap-autolink-admin__import`);
+
+    assert.strictEqual(
+      lastRequest("sitemap").body.status,
+      "enabled",
+      "approving it is what starts the import"
+    );
+    assert
+      .dom(`${pending}`)
+      .hasAttribute("data-status", "enabled", "and the row reflects it");
+  });
+
+  test("declining a sitemap never fetches it again", async function (assert) {
+    await visit(SITEMAPS);
+
+    await click(
+      ".sitemap-autolink-admin__sitemap[data-sitemap-id='3'] .sitemap-autolink-admin__ignore"
+    );
+
+    assert.strictEqual(lastRequest("sitemap").body.status, "ignored");
+  });
+
+  // Two ways to stop, because "keep the pages" and "delete the pages"
+  // are different answers and one confirm cannot ask for both.
+  test("stopping an import can keep or delete the pages", async function (assert) {
+    await visit(SITEMAPS);
+
+    const importing = ".sitemap-autolink-admin__sitemap[data-sitemap-id='2']";
+    assert.dom(`${importing} .sitemap-autolink-admin__stop-importing`).exists();
+    assert.dom(`${importing} .sitemap-autolink-admin__stop-purge`).exists();
+
+    await click(`${importing} .sitemap-autolink-admin__stop-purge`);
+    await click(".dialog-footer .btn-primary");
+
+    const request = lastRequest("sitemap");
+    assert.strictEqual(request.body.status, "ignored");
+    assert.strictEqual(
+      request.body.purge,
+      "true",
+      "the destructive one asks for the pages to be deleted"
+    );
+  });
+
+  test("reads the configured sitemaps on demand", async function (assert) {
+    await visit(SITEMAPS);
+
+    await click(".sitemap-autolink-admin__discover");
+
+    assert.ok(lastRequest("discover"), "discovery is explicit, not a sync");
+    assert
+      .dom(".sitemap-autolink-admin__notice")
+      .hasText(i18n("sitemap_autolink.admin.discover_done"));
   });
 });
 

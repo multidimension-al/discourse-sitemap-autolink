@@ -14,7 +14,18 @@ module SitemapAutolink
   class SitemapSync
     USER_AGENT = "discourse-sitemap-autolink (+https://github.com/multidimension-al/discourse-sitemap-autolink)"
     MAX_TITLE_BYTES = 524_288
+    # Sitemap documents are read whole, not just far enough to find a
+    # title, and the protocol allows 50,000 URLs (tens of MB) per file.
+    # A document truncated by this cap is reported as a failed fetch,
+    # never as a short URL list.
+    MAX_SITEMAP_BYTES = 8_388_608
     MAX_INDEX_CHILDREN = 100
+    # An admin-triggered discovery pass runs inside a web request and
+    # fetches one document per child sitemap, so it needs its own cap.
+    DISCOVERY_BUDGET_SECONDS = 60
+    # How many of a newly seen sitemap's URLs to check against the
+    # catalog before deciding it is one we were already importing.
+    ADOPTION_SAMPLE = 20
     # Hard wall-clock cap for ONE HTTP fetch. Net::HTTP's read_timeout
     # resets on every byte received, so a tarpitting server that drips
     # a byte every few seconds can otherwise pin a fetch (and the whole
@@ -131,8 +142,15 @@ module SitemapAutolink
         fetch_seconds: 0.0,
         slowest_fetches: [],
         deferred_retries: 0,
+        pending_sitemaps: [],
         sources: @sources.map { |s| "#{s[:url]} (#{s[:type]})" },
       }
+      # Which (entry, sitemap) pairs this run actually observed, and
+      # which sitemaps it read end to end — together they say which
+      # memberships may safely be pruned afterwards.
+      @seen_memberships = Set.new
+      @fetched_sitemap_ids = Set.new
+      @entry_ids_by_url = {}
     end
 
     # Never raises: any failure lands in report[:errors] so the sync-run
@@ -158,7 +176,7 @@ module SitemapAutolink
       @sources.each do |source|
         break if stop_early
         begin
-          entries = fetch_sitemap_entries(source[:url])
+          entries = fetch_sitemap_entries(source, now: now)
           if entries.nil?
             @report[:errors] << "failed to fetch sitemap #{source[:url]} (unreachable or incomplete)"
             next
@@ -181,14 +199,23 @@ module SitemapAutolink
               break
             end
             url = SitemapAutolinkEntry.normalize_url(loc)
-            next if url.empty? || seen_urls.include?(url)
+            next if url.empty?
+            # The same URL is routinely listed in more than one sitemap.
+            # It is only synced once, but EVERY listing of it is
+            # recorded — otherwise filtering by the second sitemap would
+            # not find a page that genuinely appears in it.
+            if seen_urls.include?(url)
+              record_membership(url, listed_in, now)
+              next
+            end
             if !ingestible?(url)
               @report[:excluded] += 1
               next
             end
             seen_urls << url
             @report[:seen] += 1
-            sync_entry(url, lastmod, source[:type], now, listed_in || source[:url])
+            sync_entry(url, lastmod, source[:type], now, listed_in)
+            record_membership(url, listed_in, now)
             @on_progress&.call(@report[:seen])
           end
         rescue => e
@@ -201,9 +228,17 @@ module SitemapAutolink
       begin
         # Removal detection needs a COMPLETE pass over every source; a
         # partial run must not disable the unvisited tail of the catalog.
-        mark_removed(seen_urls, now) if @report[:errors].empty? && !@report[:partial]
+        if @report[:errors].empty? && !@report[:partial]
+          prune_memberships(now)
+          mark_removed(seen_urls, now)
+        end
       rescue => e
         @report[:errors] << "mark_removed: #{e.class} #{e.message}"
+      end
+      if @report[:pending_sitemaps].any?
+        @report[:notes] << "#{@report[:pending_sitemaps].size} child sitemap(s) are waiting " \
+          "for a decision and were NOT imported: #{@report[:pending_sitemaps].join(", ")} " \
+          "— approve or ignore them on the plugin's Sitemaps page"
       end
       # Fetch telemetry in the run details: an average that climbs run
       # over run (or a slowest-list full of one host) is the in-product
@@ -244,11 +279,15 @@ module SitemapAutolink
           truncated = true
           break
         end
-        entries = fetch_sitemap_entries(source[:url])
+        pending_before = @report[:pending_sitemaps].size
+        # A dry run must not create or approve anything, so it reads the
+        # sitemap records without writing them.
+        entries = fetch_sitemap_entries(source, persist: false)
         if entries.nil?
           result[:errors] << "failed to fetch sitemap #{source[:url]}"
           next
         end
+        pending = @report[:pending_sitemaps][pending_before..] || []
         # Same normalization and same admission rules a real run applies,
         # or the "what would be ingested" list is not worth reading.
         urls =
@@ -275,6 +314,10 @@ module SitemapAutolink
         result[:sources] << {
           sitemap: source[:url],
           type: source[:type],
+          # Children of an index that nobody has approved yet. Their URLs
+          # are NOT in the counts above, which is exactly what a dry run
+          # should show: this is what would be imported today.
+          pending_sitemaps: pending,
           total_urls: urls.size,
           excluded_by_pattern: excluded.size,
           excluded_sample: excluded.first(10),
@@ -290,43 +333,294 @@ module SitemapAutolink
       result
     end
 
-    # Fetch one configured source. A <sitemapindex> is expanded into its
-    # child sitemaps (one level, same content type). A sitemap missing
-    # its closing tag (truncated by size caps, fetch deadline, or a
-    # broken connection) counts as a FAILED fetch, never a partial
-    # success — a partial URL list would otherwise mark every unlisted
-    # entry as removed from the source.
-    def fetch_sitemap_entries(url)
-      xml = to_utf8(@http_get.call(url, MAX_TITLE_BYTES * 4))
-      return nil if xml.nil? || !complete_sitemap?(xml)
+    # Fetch one configured source and return [loc, lastmod, sitemap]
+    # triples for every URL it lists, where `sitemap` is the record of
+    # the document that actually listed it.
+    #
+    # A <sitemapindex> is NOT expanded wholesale any more. Each child is
+    # recorded, and only children an admin has enabled are imported;
+    # newly discovered ones are fetched once purely to record their kind
+    # and URL count, so the decision can be made against a number. An
+    # index whose children hold tens of thousands of URLs used to become
+    # an unannounced import of all of them.
+    #
+    # A sitemap missing its closing tag (truncated by size caps, fetch
+    # deadline, or a broken connection) counts as a FAILED fetch, never a
+    # partial success — a partial URL list would otherwise mark every
+    # unlisted entry as removed from the source.
+    def fetch_sitemap_entries(source, now: Time.zone.now, persist: true)
+      source = { url: source, type: "content" } if source.is_a?(String)
+      record =
+        sitemap_record(
+          url: source[:url],
+          content_type: source[:type],
+          parent_url: nil,
+          configured: true,
+          now: now,
+          persist: persist,
+        )
+      xml = to_utf8(@http_get.call(source[:url], MAX_SITEMAP_BYTES))
+      if xml.nil? || !complete_sitemap?(xml)
+        touch_sitemap(record, now: now, persist: persist, error: "unreachable or incomplete")
+        return nil
+      end
+
       if xml =~ /<sitemapindex[\s>]/i
+        touch_sitemap(record, now: now, persist: persist, kind: SitemapAutolinkSitemap::INDEX)
         children = parse_sitemap(xml)
         if children.size > MAX_INDEX_CHILDREN
           # A capped child list is INCOMPLETE coverage: on a clean run
           # mark_removed would disable every entry that lives only in
           # the dropped children. Partial keeps removal decisions off.
           @report[:partial] = true
-          @report[:notes] << "sitemap index #{url} lists #{children.size} child sitemaps; " \
-            "only the first #{MAX_INDEX_CHILDREN} were processed (entries beyond the cap " \
-            "keep their current state)"
+          @report[:notes] << "sitemap index #{source[:url]} lists #{children.size} child " \
+            "sitemaps; only the first #{MAX_INDEX_CHILDREN} were processed (entries beyond " \
+            "the cap keep their current state)"
           children = children.first(MAX_INDEX_CHILDREN)
         end
         entries = []
         children.each do |child_loc, _lastmod|
-          child = child_loc.strip
-          child_xml = to_utf8(@http_get.call(child, MAX_TITLE_BYTES * 4))
-          if child_xml.nil? || !complete_sitemap?(child_xml)
-            @report[:errors] << "failed to fetch child sitemap #{child} (unreachable or incomplete)"
-            next
+          child_url = SitemapAutolinkSitemap.normalize_url(child_loc)
+          next if child_url.empty?
+          child =
+            sitemap_record(
+              url: child_url,
+              content_type: source[:type],
+              parent_url: source[:url],
+              configured: false,
+              now: now,
+              persist: persist,
+            )
+          # Declined outright: never fetched, never counted, never
+          # imported. That is what ignoring one is for.
+          next if child.status == SitemapAutolinkSitemap::IGNORED
+          if child.status == SitemapAutolinkSitemap::PENDING
+            # Measuring can conclude this is a sitemap we were already
+            # importing from, in which case it is approved on the spot
+            # and imported in this same run — no gap.
+            measure_sitemap(child, now: now, persist: persist)
+            if child.status == SitemapAutolinkSitemap::PENDING
+              @report[:pending_sitemaps] << child_url
+              next
+            end
           end
-          # The document that actually listed the URL, so an admin can
-          # filter by the child sitemap and not only by the index.
-          parse_sitemap(child_xml).each { |loc, lastmod| entries << [loc, lastmod, child] }
+          locs = read_child_sitemap(child, now: now, persist: persist)
+          next if locs.nil?
+          locs.each { |loc, lastmod| entries << [loc, lastmod, child] }
         end
         entries
       else
-        parse_sitemap(xml).map { |loc, lastmod| [loc, lastmod, url] }
+        locs = parse_sitemap(xml)
+        touch_sitemap(
+          record,
+          now: now,
+          persist: persist,
+          kind: SitemapAutolinkSitemap::URLSET,
+          url_count: locs.size,
+          fetched: true,
+        )
+        @fetched_sitemap_ids << record.id if record.id
+        locs.map { |loc, lastmod| [loc, lastmod, record] }
       end
+    end
+
+    # Walk the configured sources recording what is there — sitemaps,
+    # their kind and their size — without ingesting a single URL. This is
+    # what the admin Sitemaps page runs so an index's children can be
+    # seen (and counted) before anything is decided about them.
+    def discover!
+      now = Time.zone.now
+      deadline = monotime + DISCOVERY_BUDGET_SECONDS
+      @sources.each do |source|
+        break if monotime > deadline
+        begin
+          # The URL list is deliberately discarded; the point of the pass
+          # is the sitemap records it writes on the way through.
+          fetch_sitemap_entries(source, now: now)
+        rescue => e
+          @report[:errors] << "#{source[:url]}: #{e.class} #{e.message}"
+        end
+      end
+      if monotime > deadline
+        @report[:partial] = true
+        @report[:notes] << "discovery stopped at its #{DISCOVERY_BUDGET_SECONDS}-second budget; " \
+          "run it again to finish reading the remaining sitemaps"
+      end
+      @report
+    end
+
+    # An enabled child: fetched in full, its URLs returned for import.
+    def read_child_sitemap(child, now:, persist:)
+      xml = to_utf8(@http_get.call(child.url, MAX_SITEMAP_BYTES))
+      if xml.nil? || !complete_sitemap?(xml)
+        @report[:errors] << "failed to fetch child sitemap #{child.url} " \
+          "(unreachable or incomplete)"
+        touch_sitemap(child, now: now, persist: persist, error: "unreachable or incomplete")
+        return nil
+      end
+      locs = parse_sitemap(xml)
+      kind =
+        xml =~ /<sitemapindex[\s>]/i ? SitemapAutolinkSitemap::INDEX : SitemapAutolinkSitemap::URLSET
+      # Sitemap indexes nest only one level here: a child that is itself
+      # an index is recorded and reported, not recursed into.
+      if kind == SitemapAutolinkSitemap::INDEX
+        touch_sitemap(child, now: now, persist: persist, kind: kind, fetched: true)
+        @report[:notes] << "#{child.url} is itself a sitemap index; nested indexes are not " \
+          "expanded — add it as its own source if you want its children"
+        return nil
+      end
+      touch_sitemap(
+        child,
+        now: now,
+        persist: persist,
+        kind: kind,
+        url_count: locs.size,
+        fetched: true,
+      )
+      @fetched_sitemap_ids << child.id if child.id
+      locs
+    end
+
+    # A sitemap nobody has decided about yet is fetched ONCE, to answer
+    # the only question that matters at that point: how big is it. The
+    # admin approving or ignoring it needs that number, and re-reading it
+    # on every sync would be the very cost they are trying to avoid.
+    def measure_sitemap(child, now:, persist:)
+      return if child.last_fetched_at.present?
+      xml = to_utf8(@http_get.call(child.url, MAX_SITEMAP_BYTES))
+      if xml.nil?
+        touch_sitemap(child, now: now, persist: persist, error: "unreachable")
+        return
+      end
+      complete = complete_sitemap?(xml)
+      kind =
+        xml =~ /<sitemapindex[\s>]/i ? SitemapAutolinkSitemap::INDEX : SitemapAutolinkSitemap::URLSET
+      locs = parse_sitemap(xml)
+      touch_sitemap(
+        child,
+        now: now,
+        persist: persist,
+        kind: kind,
+        url_count: locs.size,
+        # A document cut off by the size cap yields a floor, not a total.
+        url_count_partial: !complete,
+        fetched: true,
+      )
+      adopt_if_already_imported(child, locs, persist: persist)
+    end
+
+    # A child sitemap whose URLs are ALREADY in the catalog is not a new
+    # decision — it is the sitemap that has been feeding this install all
+    # along, seen for the first time as a record of its own. Approving it
+    # automatically is what keeps the opt-in from retroactively
+    # un-importing a working catalog (and, via mark_removed, disabling
+    # every page in it) the first time a site upgrades.
+    def adopt_if_already_imported(child, locs, persist:)
+      return if !persist || child.id.nil?
+      sample =
+        locs
+          .first(ADOPTION_SAMPLE)
+          .map { |loc, _lastmod| SitemapAutolinkEntry.normalize_url(loc) }
+          .reject(&:empty?)
+          .select { |url| ingestible?(url) }
+      return if sample.empty?
+      known = SitemapAutolinkEntry.where(url: sample).count
+      return if known * 2 <= sample.size
+      child.update_columns(status: SitemapAutolinkSitemap::ENABLED)
+      @report[:notes] << "#{child.url} lists URLs already in the catalog, so it was kept as an " \
+        "imported sitemap rather than held for approval"
+    end
+
+    def sitemap_record(url:, content_type:, parent_url:, configured:, now:, persist:)
+      url = SitemapAutolinkSitemap.normalize_url(url)
+      record = SitemapAutolinkSitemap.find_by(url: url)
+      if record.nil?
+        record =
+          SitemapAutolinkSitemap.new(
+            url: url,
+            content_type: content_type.presence || "content",
+            parent_url: parent_url,
+            configured: configured,
+            # A source the admin typed into the setting is approved by
+            # that act. A child discovered inside an index is not.
+            status:
+              if configured || new_children_auto_imported?
+                SitemapAutolinkSitemap::ENABLED
+              else
+                SitemapAutolinkSitemap::PENDING
+              end,
+            last_seen_at: now,
+          )
+        record.save! if persist
+        return record
+      end
+      return record if !persist
+      changes = { last_seen_at: now }
+      # A source's content type and its place in the tree follow the
+      # setting, so fixing either of them there takes effect on the next
+      # pass. The import decision is the admin's and is never rewritten.
+      changes[:content_type] = content_type if content_type.present? &&
+        record.content_type != content_type
+      changes[:parent_url] = parent_url if record.parent_url != parent_url
+      changes[:configured] = configured if record.configured != configured
+      # Re-typing a configured source into the setting re-approves it.
+      if configured && record.status != SitemapAutolinkSitemap::ENABLED
+        changes[:status] = SitemapAutolinkSitemap::ENABLED
+      end
+      record.update_columns(changes)
+      record
+    end
+
+    def touch_sitemap(record, now:, persist:, **changes)
+      return record if !persist || record.nil? || record.id.nil?
+      attrs = { last_seen_at: now }
+      attrs[:kind] = changes[:kind] if changes[:kind]
+      attrs[:url_count] = changes[:url_count] if changes.key?(:url_count)
+      attrs[:url_count_partial] = !!changes[:url_count_partial] if changes.key?(:url_count) ||
+        changes.key?(:url_count_partial)
+      attrs[:last_fetched_at] = now if changes[:fetched] || changes[:kind]
+      attrs[:last_error] = changes[:error]
+      record.update_columns(attrs)
+      record
+    end
+
+    def new_children_auto_imported?
+      return false if !defined?(SiteSetting)
+      SiteSetting.sitemap_autolink_auto_import_new_sitemaps
+    end
+
+    # Membership is recorded per listing, so a URL in two sitemaps is
+    # findable under both. Deduplicated in memory because a big sitemap
+    # can list the same URL many times.
+    def record_membership(url, sitemap, now)
+      return if sitemap.nil? || sitemap.id.nil?
+      entry_id = @entry_ids_by_url[url] ||= SitemapAutolinkEntry.where(url: url).pick(:id)
+      return if entry_id.nil?
+      key = [entry_id, sitemap.id]
+      return if @seen_memberships.include?(key)
+      @seen_memberships << key
+      row =
+        SitemapAutolinkEntrySitemap.find_or_initialize_by(entry_id: entry_id, sitemap_id: sitemap.id)
+      row.last_seen_at = now
+      row.save!
+    rescue ActiveRecord::RecordNotUnique
+      nil
+    end
+
+    # A URL that dropped out of one sitemap but still sits in another
+    # must lose only that membership. Only sitemaps this run read END TO
+    # END are pruned — a sitemap that failed to fetch tells us nothing
+    # about what it no longer contains.
+    def prune_memberships(now)
+      return if @fetched_sitemap_ids.empty?
+      # Every membership observed this run was stamped with `now`, so
+      # anything older is one this sitemap no longer lists. Comparing
+      # timestamps keeps this to one statement per sitemap instead of an
+      # IN list holding every URL in the catalog.
+      SitemapAutolinkEntrySitemap
+        .where(sitemap_id: @fetched_sitemap_ids.to_a)
+        .where("last_seen_at IS NULL OR last_seen_at < ?", now)
+        .delete_all
     end
 
     def complete_sitemap?(xml)
@@ -376,7 +670,7 @@ module SitemapAutolink
       end
     end
 
-    def sync_entry(url, lastmod, content_type, now, sitemap_url = nil)
+    def sync_entry(url, lastmod, content_type, now, _listed_in = nil)
       entry = SitemapAutolinkEntry.find_by(url: url)
 
       if entry.nil?
@@ -387,7 +681,6 @@ module SitemapAutolink
             title: title,
             content_type: content_type,
             source: "sitemap",
-            sitemap_url: sitemap_url,
             title_source: title_source,
             lastmod: lastmod,
             auto_discovered: true,
@@ -396,18 +689,13 @@ module SitemapAutolink
             title_fetch_failures: title_source == "slug" ? 1 : 0,
             next_title_fetch_at: title_source == "slug" ? now + title_retry_backoff(1) : nil,
           )
+        @entry_ids_by_url[url] = entry.id
         regenerate_terms(entry)
         @report[:added] << url
         return
       end
 
-      # Which sitemap lists a URL can change between runs — a page moves
-      # between child sitemaps, or a source is reconfigured — and rows
-      # predating this column have none. Kept current here, on its own,
-      # so none of the title and lastmod paths below have to carry it.
-      if sitemap_url.present? && entry.sitemap_url != sitemap_url
-        entry.update_columns(sitemap_url: sitemap_url)
-      end
+      @entry_ids_by_url[url] = entry.id
 
       if entry.removed_from_source
         entry.update!(removed_from_source: false, last_seen_at: now)

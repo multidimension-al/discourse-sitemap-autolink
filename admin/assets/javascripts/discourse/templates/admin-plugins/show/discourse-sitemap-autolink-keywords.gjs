@@ -170,6 +170,16 @@ const StateFilter = <template>
         @action={{fn @controller.bulkPhrases "disabled"}}
         class="btn-small btn-danger sitemap-autolink-admin__disable-all"
       />
+      {{#if @controller.gonePages}}
+        <DButton
+          @translatedLabel={{i18n
+            "sitemap_autolink.admin.purge_gone"
+            count=@controller.gonePages
+          }}
+          @action={{@controller.purgeGone}}
+          class="btn-small btn-danger sitemap-autolink-admin__purge-gone"
+        />
+      {{/if}}
     </p>
 
     {{#if @controller.data.entries.length}}
@@ -216,6 +226,14 @@ const StateFilter = <template>
                 @action={{fn @controller.toggleEntry entry}}
                 class="btn-small sitemap-autolink-admin__toggle-entry"
               />
+              {{#if entry.removed_from_source}}
+                <DButton
+                  @icon="trash-can"
+                  @title="sitemap_autolink.admin.purge_entry"
+                  @action={{fn @controller.purgeEntry entry}}
+                  class="btn-small btn-danger sitemap-autolink-admin__purge-entry"
+                />
+              {{/if}}
             </header>
 
             <a
@@ -224,6 +242,15 @@ const StateFilter = <template>
               rel="noopener noreferrer"
               target="_blank"
             >{{entry.url}}</a>
+
+            {{#if entry.sitemaps.length}}
+              <p class="sitemap-autolink-admin__entry-sitemaps">
+                {{i18n "sitemap_autolink.admin.listed_in"}}
+                {{#each entry.sitemaps as |sitemap|}}
+                  <span class="sitemap-autolink-admin__pill">{{sitemap}}</span>
+                {{/each}}
+              </p>
+            {{/if}}
 
             {{#if entry.removed_from_source}}
               <p class="sitemap-autolink-admin__not-linking">
