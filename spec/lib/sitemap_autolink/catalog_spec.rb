@@ -45,6 +45,38 @@ RSpec.describe SitemapAutolink::Catalog do
     expect(phrases).not_to include("gasket set")
   end
 
+  # `type_rank` ranks anything unlisted LAST, and "manual" is not a
+  # content type — so a site that lists its own types drops it off the
+  # end. Taking authorship rank from that list demoted every manual
+  # alias on exactly the sites that had configured a type order.
+  it "keeps a manual alias ahead whatever the type order says" do
+    SiteSetting.sitemap_autolink_type_priority = "product|wiki"
+    manual_page.update!(content_type: "wiki")
+    manual_page.terms.create!(phrase: "Widget Frame Kit", origin: :manual, state: :approved)
+    generated_page.terms.create!(
+      phrase: "Widget Frame Kit",
+      origin: :generated,
+      state: :auto_active,
+    )
+    described_class.reset_cache!
+
+    rule = described_class.ruleset.rules.find { |r| r[:phrase] == "widget frame kit" }
+    expect(rule[:url]).to eq(manual_page.url)
+  end
+
+  # A mapping in site settings is the most explicit instruction there
+  # is. Ranking it level with a manual alias left the winner to a
+  # lexicographic URL comparison.
+  it "ranks a manual mapping above a manual alias" do
+    SiteSetting.sitemap_autolink_manual_mappings =
+      "Widget Frame Kit,https://example.com/zz-setting,manual"
+    manual_page.terms.create!(phrase: "Widget Frame Kit", origin: :manual, state: :approved)
+    described_class.reset_cache!
+
+    rule = described_class.ruleset.rules.find { |r| r[:phrase] == "widget frame kit" }
+    expect(rule[:url]).to eq("https://example.com/zz-setting")
+  end
+
   it "ranks a manual alias above a generated phrase claiming the same words" do
     manual_page.terms.create!(phrase: "Widget Frame Kit", origin: :manual, state: :approved)
     generated_page.terms.create!(

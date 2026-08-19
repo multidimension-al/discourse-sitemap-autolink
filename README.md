@@ -269,8 +269,9 @@ searched on the server.
   *pages* (live, disabled, gone from the sitemap, added by hand, total,
   plus a per-type breakdown), *keywords* (auto-active, approved, awaiting
   review, disabled, added by hand, total — the four states add up),
-  *linking* (how many keywords compile into a rule, and how many two
-  live pages are still fighting over), and
+  *linking* (how many phrases compile into a rule — including mappings
+  from site settings, which are not keywords — and how many two live
+  pages are still fighting over), and
   *sitemaps* (importing, awaiting your decision, ignored, indexes).
   Counts that are asking you for a decision are highlighted. Below them
   sit the configuration warnings (e.g. entries whose type isn't
@@ -376,10 +377,13 @@ searched on the server.
   page** hands the keyword to one page by disabling it on the others;
   the edit is scoped to that one phrase, so the pages keep every other
   keyword they own, and the Keywords page can put any of them back. It is
-  offered only on pages that would actually link once they had it, and
-  refused otherwise: handing the phrase to a disabled or vanished page
-  would disable it on every page that *can* link it, leaving it linking
-  nowhere.
+  offered only on pages the change could actually help, and the result
+  is *verified* rather than predicted: the keyword is moved, the real
+  compiler is asked who owns the phrase now, and anything but the page
+  you named rolls the whole edit back with a message saying why. That
+  covers every reason a page can fail to link — disabled, gone from the
+  sitemap, ruled out by settings, an unusable URL, or simply outranked
+  — instead of the two or three anyone thinks to enumerate.
 
   *Overlapping keywords*: a short keyword buried inside a longer one
   **that leads somewhere else** — "Widget Kit" pointing at a
@@ -404,11 +408,13 @@ searched on the server.
 
   A phrase the manual-mappings setting owns is not counted as a contest
   at all: the winning rule comes from the setting, not from any page, so
-  no edit made here would change what a post links. (Manual mappings win
-  on priority — `sitemap_autolink_type_priority` ranks `manual` first by
-  default — so a page given an explicitly lower priority number can
-  still outrank one. In that case the page is the winner and the phrase
-  is a contest again, which is exactly right.)
+  no edit made here would change what a post links. (Admin-authored rules rank ahead of
+  generated ones by construction, not via `sitemap_autolink_type_priority`
+  — a mapping in site settings outranks a manual alias on a page, and
+  both outrank anything generated, whatever the type order says. An
+  entry given an explicit `priority` still overrides all of it; in that
+  case the page is the winner and the phrase is a contest again, which
+  is exactly right.)
 - **Logs** — every sync run with its trigger, URL counts,
   added/retitled/removed counts, result (OK, Partial, Running,
   Interrupted, Failed), timing/telemetry notes, and errors.
@@ -449,7 +455,7 @@ Console tooling mirrors the page: `rake sitemap_autolink:report`,
 | `sitemap_autolink_include_private_messages` | off | Also link in personal messages. |
 | `sitemap_autolink_excluded_categories` | – | Never link in these categories (subcategories included). |
 | `sitemap_autolink_enabled_types` | – (all) | Restrict which content types may link. |
-| `sitemap_autolink_type_priority` | `manual` | Collision priority order, strongest first; unlisted types rank last. |
+| `sitemap_autolink_type_priority` | `manual` | Collision priority order for CONTENT TYPES, strongest first; unlisted types rank last. Admin-authored rules (manual mappings, manual aliases) outrank every type regardless of this list. |
 
 ### Catalog & phrases
 

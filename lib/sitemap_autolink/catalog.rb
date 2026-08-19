@@ -47,6 +47,19 @@ module SitemapAutolink
       false
     end
 
+    # Admin-authored rules outrank every generated one, and their rank
+    # does NOT come from the type-priority list. That list orders
+    # CONTENT TYPES, and `type_rank` ranks anything unlisted LAST — so
+    # on a site that lists its own types ("product|wiki") the name
+    # "manual" falls off the end and reading authorship out of the list
+    # demotes the very rules it is meant to promote.
+    #
+    # A mapping in site settings is the most explicit instruction there
+    # is, so it outranks an alias on a page; both outrank anything
+    # generated, whatever the type order says.
+    MANUAL_MAPPING_RANK = -2
+    MANUAL_ALIAS_RANK = -1
+
     def self.type_rank(type)
       list = SiteSetting.sitemap_autolink_type_priority.split("|")
       list.index(type.to_s) || list.size
@@ -93,7 +106,7 @@ module SitemapAutolink
             phrase: Matcher.normalize(phrase),
             url: url,
             type: type.presence || "manual",
-            priority: type_rank("manual"),
+            priority: MANUAL_MAPPING_RANK,
           }
         end
     end
@@ -142,7 +155,7 @@ module SitemapAutolink
             phrase: phrase,
             url: url,
             type: content_type,
-            priority: priority || type_rank(manual ? "manual" : content_type),
+            priority: priority || (manual ? MANUAL_ALIAS_RANK : type_rank(content_type)),
             entry_id: entry_id,
           }
         end

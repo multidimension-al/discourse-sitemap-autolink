@@ -138,6 +138,10 @@ export default class AdminPluginsShowSitemapAutolinkConflictsController extends 
           this.notice = i18n("sitemap_autolink.admin.make_winner_done", {
             count: result.disabled,
           });
+          // Resolving can empty the page being viewed; without this the
+          // pager keeps reading "4 / 1" over an empty section.
+          this.collisionPage = 0;
+          this.overlapPage = 0;
           await this.load();
         } catch (e) {
           popupAjaxError(e);

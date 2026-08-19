@@ -821,16 +821,11 @@ RSpec.describe SitemapAutolinkAdminController do
     # between pages — the setting beats both, and no edit made here
     # would change what a post links.
     it "does not call it a contest when a manual mapping owns the phrase" do
-      # Generated keywords, because a manual ALIAS ranks as manual too —
-      # level with a manual MAPPING — and a tie is broken by URL, which
-      # would leave the setting winning or losing by accident rather
-      # than by rank.
-      #
-      # The mapping's URL then deliberately sorts AFTER both pages'.
-      # Collisions break on priority first and only then on URL, so a
-      # mapping that would lose the alphabetical tie-break proves it won
-      # on rank — the thing this behaviour actually depends on.
-      SitemapAutolinkTerm.find_each { |t| t.update!(origin: :generated, state: :auto_active) }
+      # The URL deliberately sorts AFTER both pages'. Collisions break on
+      # priority first and only then on URL, so a mapping that would
+      # lose the alphabetical tie-break proves it won on rank — and
+      # these pages hold manual ALIASES, the case that used to tie with
+      # a mapping and be decided by the URL string.
       SiteSetting.sitemap_autolink_manual_mappings =
         "Widget Frame Kit,https://example.com/zz-promo/widget-frame-kit,manual"
       SitemapAutolink::Catalog.bump_version!
@@ -972,10 +967,56 @@ RSpec.describe SitemapAutolinkAdminController do
 
     # Nothing here outranks the setting, so the edit would disable a
     # working keyword and change no link at all.
+    # The guard used to check two of the several reasons a page cannot
+    # link and wave the rest through, disabling every keyword that DID
+    # link and reporting success. The outcome is verified against the
+    # real compiler now, so each of these leaves the catalog untouched.
+    it "refuses when site settings rule the winning page out" do
+      SiteSetting.sitemap_autolink_enabled_types = "product"
+      SitemapAutolink::Catalog.bump_version!
+
+      post "#{base}/collisions/resolve", params: { phrase: "Widget Frame Kit", entry_id: rival.id }
+
+      expect(response.status).to eq(422)
+      expect(response.parsed_body["error"]).to include("site settings")
+      expect(entry.terms.first.reload.state).to eq("approved")
+    end
+
+    it "refuses when the winning page's URL could never become a link" do
+      rival.update_columns(url: "javascript:alert(1)")
+      SitemapAutolink::Catalog.bump_version!
+
+      post "#{base}/collisions/resolve", params: { phrase: "Widget Frame Kit", entry_id: rival.id }
+
+      expect(response.status).to eq(422)
+      expect(response.parsed_body["error"]).to include("URL cannot become a link")
+      expect(entry.terms.first.reload.state).to eq("approved")
+    end
+
+    it "refuses when another page outranks the one being named" do
+      entry.update!(priority: -5)
+      SitemapAutolink::Catalog.bump_version!
+
+      post "#{base}/collisions/resolve", params: { phrase: "Widget Frame Kit", entry_id: rival.id }
+
+      expect(response.status).to eq(422)
+      expect(response.parsed_body["error"]).to include("outranks")
+      expect(entry.terms.first.reload.state).to eq("approved")
+    end
+
+    # `auto_active` is regenerated from the page title on every sync,
+    # so leaving the winner in it lets a retitle destroy the keyword
+    # while the losers stay disabled for good.
+    it "promotes the winner so a later sync cannot undo the decision" do
+      entry.terms.first.update!(state: :auto_active)
+
+      post "#{base}/collisions/resolve", params: { phrase: "Widget Frame Kit", entry_id: entry.id }
+
+      expect(response.status).to eq(200)
+      expect(entry.terms.first.reload.state).to eq("approved")
+    end
+
     it "refuses when a manual mapping already owns the phrase" do
-      # Generated keywords rank below a manual mapping; manual aliases
-      # rank level with one and would be decided by the URL tie-break.
-      SitemapAutolinkTerm.find_each { |t| t.update!(origin: :generated, state: :auto_active) }
       SiteSetting.sitemap_autolink_manual_mappings =
         "Widget Frame Kit,https://example.com/zz-promo/widget-frame-kit,manual"
       SitemapAutolink::Catalog.bump_version!
@@ -988,7 +1029,7 @@ RSpec.describe SitemapAutolinkAdminController do
 
       expect(response.status).to eq(422)
       expect(response.parsed_body["error"]).to include("sitemap_autolink_manual_mappings")
-      expect(rival.terms.first.reload.state).to eq("auto_active")
+      expect(rival.terms.first.reload.state).to eq("approved")
     end
 
     it "refuses a page that does not claim the phrase" do

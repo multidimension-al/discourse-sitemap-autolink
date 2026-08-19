@@ -251,7 +251,7 @@ function collisionsPayload() {
 
 function overlapsPayload() {
   return {
-    total: 2,
+    total: 3,
     page: 0,
     per_page: 50,
     pages: 1,
@@ -284,6 +284,40 @@ function overlapsPayload() {
                 entry_id: 4,
                 url: "https://example.com/shop/acme-widget-kit-gasket-set",
                 title: "Acme Widget Kit Gasket Set",
+                type: "product",
+                state: "auto_active",
+                page_state: "live",
+                linking: true,
+                reason: null,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        phrase: "widget",
+        linking: true,
+        owners: [
+          {
+            entry_id: null,
+            url: "https://example.com/promo/widget",
+            title: null,
+            type: "manual",
+            state: "manual_mapping",
+            page_state: null,
+            linking: true,
+            reason: null,
+          },
+        ],
+        covered_by: [
+          {
+            phrase: "deluxe widget",
+            linking: true,
+            owners: [
+              {
+                entry_id: 5,
+                url: "https://example.com/shop/deluxe-widget",
+                title: "Deluxe Widget",
                 type: "product",
                 state: "auto_active",
                 page_state: "live",
@@ -1261,7 +1295,13 @@ acceptance("Sitemap Autolink | Admin | conflicts", function (needs) {
 
     assert
       .dom(".sitemap-autolink-admin__overlap")
-      .exists({ count: 2 }, "both swallowed keywords are reported");
+      .exists({ count: 3 }, "every swallowed keyword is reported");
+
+    // A phrase only sitemap_autolink_manual_mappings claims has no page
+    // behind it, so it renders through a synthetic owner.
+    assert
+      .dom(".sitemap-autolink-admin__overlap[data-phrase='widget']")
+      .includesText(i18n("sitemap_autolink.admin.state_manual_mapping"));
 
     assert
       .dom(
