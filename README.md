@@ -582,6 +582,27 @@ no refetching involved.
 Canonical URLs, no tracking parameters. Style them per content type
 via the `sitemap-autolink-<type>` class in your theme.
 
+## Upgrading
+
+**A version that changes how rules RANK will change destinations that
+are already cooked into posts.** Nothing detects a deploy, so the
+plugin cannot rebake on its own: a new process compiles the new ranking
+immediately, but posts cooked under the old one keep their old hrefs
+until something rebakes them. Until then the same phrase can point two
+different ways depending on when each post was last cooked.
+
+After deploying such a version, open **Overview → Rebake all** (a
+throttled, candidate-filtered wave) and then look at **Conflicts**,
+where anything the new ranking put in play will be waiting.
+
+The release that gave admin-authored rules a rank of their own is one
+of these. Before it, a bug meant manual aliases were treated as
+generated: they were subject to the excluded-terms list, which is not
+supposed to touch them, and they did not outrank generated phrases.
+Fixing it means manual aliases start winning phrases that generated
+keywords hold, and any alias whose phrase sits in
+`sitemap_autolink_excluded_terms` starts linking.
+
 ## FAQ
 
 **Does it ever change what members wrote?** No. Links exist only in
