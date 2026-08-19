@@ -1,23 +1,43 @@
 import Controller from "@ember/controller";
 import { action } from "@ember/object";
+import { service } from "@ember/service";
 import { tracked } from "@glimmer/tracking";
-import { catalogGet } from "discourse/plugins/discourse-sitemap-autolink/discourse/lib/sitemap-autolink-catalog";
+import { ajax } from "discourse/lib/ajax";
+import { popupAjaxError } from "discourse/lib/ajax-error";
+import {
+  BASE,
+  catalogGet,
+} from "discourse/plugins/discourse-sitemap-autolink/discourse/lib/sitemap-autolink-catalog";
+import { i18n } from "discourse-i18n";
 
 export default class AdminPluginsShowSitemapAutolinkConflictsController extends Controller {
+  @service dialog;
+
   @tracked collisions = null;
   @tracked overlaps = null;
   @tracked pluginDisabled = false;
   @tracked loadFailed = false;
 
   @tracked query = "";
-  @tracked onlyCompeting = false;
+  // Off by default: both reports now list only what changes a link, and
+  // this is the opt-in that adds back the ones already settled.
+  @tracked includeInactive = false;
   @tracked collisionPage = 0;
   @tracked overlapPage = 0;
+  @tracked notice = null;
 
-  // Always a number: the summary renders before the first load
+  // Always numbers: the summaries render before the first load
   // finishes, and i18n raises on an undefined interpolation value.
-  get competingCount() {
-    return this.collisions?.competing || 0;
+  get settledCollisions() {
+    return this.collisions?.settled || 0;
+  }
+
+  get settledOverlaps() {
+    return this.overlaps?.settled || 0;
+  }
+
+  get sameDestinationCount() {
+    return this.overlaps?.same_destination || 0;
   }
 
   get collisionsDisplay() {
@@ -57,8 +77,8 @@ export default class AdminPluginsShowSitemapAutolinkConflictsController extends 
     if (this.query) {
       data.q = this.query;
     }
-    if (this.onlyCompeting) {
-      data.only_competing = "true";
+    if (this.includeInactive) {
+      data.include_inactive = "true";
     }
     this.collisions = this.#record(await catalogGet("collisions", data));
   }
@@ -69,8 +89,8 @@ export default class AdminPluginsShowSitemapAutolinkConflictsController extends 
     if (this.query) {
       data.q = this.query;
     }
-    if (this.onlyCompeting) {
-      data.only_competing = "true";
+    if (this.includeInactive) {
+      data.include_inactive = "true";
     }
     this.overlaps = this.#record(await catalogGet("overlaps", data));
   }
@@ -88,14 +108,51 @@ export default class AdminPluginsShowSitemapAutolinkConflictsController extends 
     this.load();
   }
 
-  // The same question of both reports: show me only what changes which
-  // link a post actually gets.
+  // The same question of both reports: show me the ones that are still
+  // undecided, or every page that ever claimed the phrase.
   @action
-  toggleOnlyCompeting() {
-    this.onlyCompeting = !this.onlyCompeting;
+  toggleIncludeInactive() {
+    this.includeInactive = !this.includeInactive;
     this.collisionPage = 0;
     this.overlapPage = 0;
     this.load();
+  }
+
+  // Give the phrase to one page by disabling it on the others. Confirmed
+  // because it edits keywords on pages the admin is not looking at.
+  @action
+  resolveCollision(collision, candidate) {
+    this.dialog.yesNoConfirm({
+      message: i18n("sitemap_autolink.admin.make_winner_confirm", {
+        phrase: collision.phrase,
+        title: candidate.title || candidate.url,
+      }),
+      didConfirm: async () => {
+        try {
+          const result = await ajax(`${BASE}/collisions/resolve`, {
+            type: "POST",
+            data: { phrase: collision.phrase, entry_id: candidate.entry_id },
+          });
+          // A resolve that would leave the phrase linking nowhere is
+          // refused by the server, so anything that gets here worked.
+          // "disabled on 0 other pages" is a confusing way to say the
+          // page already had it to itself.
+          this.notice =
+            result.disabled > 0
+              ? i18n("sitemap_autolink.admin.make_winner_done", {
+                  count: result.disabled,
+                })
+              : i18n("sitemap_autolink.admin.make_winner_already");
+          // Resolving can empty the page being viewed; without this the
+          // pager keeps reading "4 / 1" over an empty section.
+          this.collisionPage = 0;
+          this.overlapPage = 0;
+          await this.load();
+        } catch (e) {
+          popupAjaxError(e);
+        }
+      },
+    });
   }
 
   @action

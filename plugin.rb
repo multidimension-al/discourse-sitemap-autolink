@@ -108,6 +108,7 @@ after_initialize do
       put "terms/:id" => "sitemap_autolink_admin#update_term"
       delete "terms/:id" => "sitemap_autolink_admin#destroy_term"
       get "collisions" => "sitemap_autolink_admin#collisions"
+      post "collisions/resolve" => "sitemap_autolink_admin#resolve_collision"
       get "overlaps" => "sitemap_autolink_admin#overlaps"
       get "status" => "sitemap_autolink_admin#status"
       get "runs" => "sitemap_autolink_admin#runs"

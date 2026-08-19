@@ -19,6 +19,16 @@ class SitemapAutolinkTerm < ActiveRecord::Base
     states.key(value) || value.to_s
   end
 
+  # Same ambiguity, same defence, for the other enum. Comparing a
+  # plucked `origin` straight against `origins[:manual]` is a bet on
+  # which form the adapter hands back, and losing that bet is silent:
+  # every manual alias is treated as generated, so the excluded-terms
+  # gate starts eating admin-authored aliases and they stop outranking
+  # generated phrases at match time.
+  def self.manual_origin?(value)
+    value == origins[:manual] || value.to_s == "manual"
+  end
+
   validates :phrase, presence: true
   validates :normalized_phrase,
             presence: true,

@@ -52,6 +52,21 @@ RSpec.describe SitemapAutolinkAdminController do
       get "#{base}/status"
       expect(response.status).to eq(404)
     end
+
+    # The write endpoints are what an access regression would actually
+    # cost, so they are asserted rather than assumed from the read one.
+    it "closes the write endpoints to anyone who is not staff" do
+      entry.terms.create!(phrase: "Widget Frame Kit", origin: :manual, state: :approved)
+
+      post "#{base}/collisions/resolve", params: { phrase: "Widget Frame Kit", entry_id: entry.id }
+      expect(response.status).to eq(404)
+
+      sign_in(user)
+      post "#{base}/collisions/resolve", params: { phrase: "Widget Frame Kit", entry_id: entry.id }
+      expect(response.status).to eq(404)
+
+      expect(entry.terms.first.reload.state).to eq("approved")
+    end
   end
 
   describe "#status" do
@@ -71,6 +86,52 @@ RSpec.describe SitemapAutolinkAdminController do
       expect(json["pending_terms"]).to eq(1)
       expect(json["active_rules"]).to eq(1)
       expect(json["entry_types"]).to eq(["product"])
+    end
+
+    it "reports the figures the overview draws" do
+      entry.terms.create!(phrase: "Widget Frame Kit", origin: :manual, state: :approved)
+      entry.terms.create!(phrase: "Kit", origin: :generated, state: :pending_review)
+      gone =
+        SitemapAutolinkEntry.create!(
+          url: "https://example.com/shop/discontinued",
+          title: "Discontinued Widget",
+          content_type: "product",
+          source: "sitemap",
+          removed_from_source: true,
+        )
+      list_in(gone, "https://example.com/sitemap-shop.xml")
+      list_in(nil, "https://example.com/sitemap-wiki.xml", status: "pending")
+      list_in(nil, "https://example.com/sitemap.xml", kind: "index")
+      SitemapAutolink::Catalog.bump_version!
+      sign_in(admin)
+
+      get "#{base}/status"
+      stats = response.parsed_body["stats"]
+      expect(stats["pages"]).to include("total" => 2, "live" => 1, "gone" => 1, "disabled" => 0)
+      expect(stats["pages"]["by_type"]).to eq({ "product" => 1 })
+      expect(stats["keywords"]).to include(
+        "total" => 2,
+        "auto_active" => 0,
+        "approved" => 1,
+        "pending_review" => 1,
+        "disabled" => 0,
+        "manual" => 1,
+      )
+      # The four states account for every keyword — a group that does
+      # not add up cannot be read.
+      states = stats["keywords"].values_at("auto_active", "approved", "pending_review", "disabled")
+      expect(states.sum).to eq(stats["keywords"]["total"])
+      expect(stats["pages"]["manual"]).to eq(0)
+      expect(stats["rules"]).to eq(1)
+      expect(stats["contested"]).to eq(0)
+      # The index is counted as an index, not as something importing:
+      # it imports nothing, which is what the Sitemaps page says too.
+      expect(stats["sitemaps"]).to include(
+        "imported" => 1,
+        "pending" => 1,
+        "ignored" => 0,
+        "indexes" => 1,
+      )
     end
   end
 
@@ -561,18 +622,66 @@ RSpec.describe SitemapAutolinkAdminController do
       short_entry.terms.first.update!(state: :pending_review)
       SitemapAutolink::Catalog.bump_version!
 
-      get "#{base}/overlaps"
+      get "#{base}/overlaps", params: { include_inactive: "true" }
       overlap = response.parsed_body["overlaps"].first
       expect(overlap["phrase"]).to eq("frame kit")
       expect(overlap["linking"]).to eq(false)
+      expect(overlap["owners"].first["reason"]).to eq("keyword_pending")
     end
 
-    it "narrows to overlaps that change what links" do
+    it "leaves out a pair one side of which does not link" do
       short_entry.terms.first.update!(state: :pending_review)
       SitemapAutolink::Catalog.bump_version!
 
-      get "#{base}/overlaps", params: { only_competing: "true" }
+      get "#{base}/overlaps"
       expect(response.parsed_body["overlaps"]).to be_empty
+      expect(response.parsed_body["settled"]).to eq(1)
+    end
+
+    # The complaint this rule exists for: a page titled "Deluxe Widget
+    # Kit" generates "widget kit" as well, so the catalog is full of
+    # pairs where both keywords lead to the SAME page. Whichever one
+    # fires, the reader lands in the same place — there is nothing to
+    # decide, and at catalog scale these drowned out the real overlaps.
+    it "does not report a keyword swallowed by a longer one on the same page" do
+      SitemapAutolinkTerm.delete_all
+      same =
+        SitemapAutolinkEntry.create!(
+          url: "https://example.com/shop/deluxe-widget-kit",
+          title: "Deluxe Widget Kit",
+          content_type: "product",
+          source: "sitemap",
+        )
+      same.terms.create!(phrase: "Deluxe Widget Kit", origin: :generated, state: :auto_active)
+      same.terms.create!(phrase: "Widget Kit", origin: :generated, state: :auto_active)
+      SitemapAutolink::Catalog.bump_version!
+
+      get "#{base}/overlaps"
+      expect(response.parsed_body["overlaps"]).to be_empty
+      expect(response.parsed_body["same_destination"]).to eq(1)
+    end
+
+    # ...but the same containment between two DIFFERENT pages is the
+    # decision the report is for.
+    it "reports the same containment when the two keywords lead to different pages" do
+      SitemapAutolinkTerm.delete_all
+      entry.terms.create!(phrase: "Widget Kit", origin: :generated, state: :auto_active)
+      SitemapAutolinkEntry
+        .create!(
+          url: "https://example.com/shop/deluxe-widget-kit",
+          title: "Deluxe Widget Kit",
+          content_type: "product",
+          source: "sitemap",
+        )
+        .terms
+        .create!(phrase: "Deluxe Widget Kit", origin: :generated, state: :auto_active)
+      SitemapAutolink::Catalog.bump_version!
+
+      get "#{base}/overlaps"
+      overlap = response.parsed_body["overlaps"].first
+      expect(overlap["phrase"]).to eq("widget kit")
+      expect(overlap["covered_by"].map { |c| c["phrase"] }).to eq(["deluxe widget kit"])
+      expect(response.parsed_body["same_destination"]).to eq(0)
     end
 
     it "searches by either keyword" do
@@ -601,6 +710,18 @@ RSpec.describe SitemapAutolinkAdminController do
       sign_in(admin)
     end
 
+    # A headline figure that disagrees with the page it links to is
+    # worse than no figure, so the two are asserted against each other
+    # in a state where the count is not trivially zero.
+    it "agrees with the overview's contested count" do
+      get "#{base}/collisions"
+      competing = response.parsed_body["competing"]
+      expect(competing).to eq(1)
+
+      get "#{base}/status"
+      expect(response.parsed_body["stats"]["contested"]).to eq(competing)
+    end
+
     it "reports every destination claiming a phrase, and the winner" do
       get "#{base}/collisions"
       collision = response.parsed_body["collisions"].first
@@ -612,15 +733,28 @@ RSpec.describe SitemapAutolinkAdminController do
       expect(collision["winner"]).to be_present
     end
 
-    # Scoping DETECTION to active entries made the report disagree with
-    # the catalog on screen: pages visibly claiming the same phrase were
-    # reported as no conflict at all. Report it, and say which of them
-    # is actually in the fight.
-    it "still reports a phrase whose rival is disabled, marked not linking" do
+    # A page that cannot link the phrase has already lost it — there is
+    # nothing to decide, so it is not a conflict. Most of the report was
+    # this once the catalog got big.
+    it "leaves out a phrase only one page can link" do
       rival.update!(enabled: false)
       SitemapAutolink::Catalog.bump_version!
 
       get "#{base}/collisions"
+      expect(response.parsed_body["collisions"]).to be_empty
+      expect(response.parsed_body["competing"]).to eq(0)
+      expect(response.parsed_body["settled"]).to eq(1)
+    end
+
+    # Scoping DETECTION to active entries made the report disagree with
+    # the catalog on screen: pages visibly claiming the same phrase were
+    # reported as no conflict at all. Detect broadly, then say which of
+    # them is actually in the fight — and why the others are not.
+    it "shows the settled ones on request, with the reason each is out" do
+      rival.update!(enabled: false)
+      SitemapAutolink::Catalog.bump_version!
+
+      get "#{base}/collisions", params: { include_inactive: "true" }
       collision = response.parsed_body["collisions"].first
       expect(collision["phrase"]).to eq("widget frame kit")
       expect(collision["linking_candidates"]).to eq(1)
@@ -628,24 +762,103 @@ RSpec.describe SitemapAutolinkAdminController do
         [entry.url, true],
         [rival.url, false],
       )
-      expect(response.parsed_body["competing"]).to eq(0)
+      expect(collision["candidates"].find { |c| c["url"] == rival.url }["reason"]).to eq(
+        "page_disabled",
+      )
+    end
+
+    it "names a page gone from the sitemap as the reason it is out" do
+      rival.update!(removed_from_source: true)
+      SitemapAutolink::Catalog.bump_version!
+
+      get "#{base}/collisions", params: { include_inactive: "true" }
+      collision = response.parsed_body["collisions"].first
+      expect(collision["candidates"].find { |c| c["url"] == rival.url }["reason"]).to eq(
+        "page_gone",
+      )
     end
 
     it "reports a phrase whose claimants are all awaiting review" do
       SitemapAutolinkTerm.update_all(state: SitemapAutolinkTerm.states[:pending_review])
       SitemapAutolink::Catalog.bump_version!
 
-      get "#{base}/collisions"
+      get "#{base}/collisions", params: { include_inactive: "true" }
       expect(response.parsed_body["collisions"].first["phrase"]).to eq("widget frame kit")
       expect(response.parsed_body["collisions"].first["linking_candidates"]).to eq(0)
     end
 
-    it "narrows to live contests on request" do
-      rival.update!(enabled: false)
+    # "Linking" is not one column. A page whose type the enabled-types
+    # setting rules out never compiles into a rule, so it is not
+    # competing for anything — and reporting it as a conflict sent the
+    # admin looking for a decision that had already been made in site
+    # settings.
+    it "does not count a page whose type cannot link" do
+      SiteSetting.sitemap_autolink_enabled_types = "product"
       SitemapAutolink::Catalog.bump_version!
 
-      get "#{base}/collisions", params: { only_competing: "true" }
+      get "#{base}/collisions"
       expect(response.parsed_body["collisions"]).to be_empty
+      expect(response.parsed_body["settled"]).to eq(1)
+
+    end
+
+    # The page is live and its keyword approved, so neither of those can
+    # be named as the reason. Saying "keyword approved" there answered
+    # nothing; the honest answer is that a setting rules it out.
+    it "blames the settings when the page is live and the keyword approved" do
+      SiteSetting.sitemap_autolink_enabled_types = "product"
+      SitemapAutolink::Catalog.bump_version!
+
+      get "#{base}/collisions", params: { include_inactive: "true" }
+      candidate =
+        response.parsed_body["collisions"].first["candidates"].find { |c| c["url"] == rival.url }
+      expect(candidate["state"]).to eq("approved")
+      expect(candidate["reason"]).to eq("settings")
+    end
+
+    # A phrase the manual-mappings setting claims is not a contest
+    # between pages — the setting beats both, and no edit made here
+    # would change what a post links.
+    it "does not call it a contest when a manual mapping owns the phrase" do
+      # The URL deliberately sorts AFTER both pages'. Collisions break on
+      # priority first and only then on URL, so a mapping that would
+      # lose the alphabetical tie-break proves it won on rank — and
+      # these pages hold manual ALIASES, the case that used to tie with
+      # a mapping and be decided by the URL string.
+      SiteSetting.sitemap_autolink_manual_mappings =
+        "Widget Frame Kit,https://example.com/zz-promo/widget-frame-kit,manual"
+      SitemapAutolink::Catalog.bump_version!
+
+      get "#{base}/collisions"
+      expect(response.parsed_body["collisions"]).to be_empty
+      expect(response.parsed_body["settled"]).to eq(1)
+      # And the overview's headline agrees, rather than highlighting a
+      # contest the page it links to says does not exist.
+      get "#{base}/status"
+      expect(response.parsed_body["stats"]["contested"]).to eq(0)
+
+      get "#{base}/collisions", params: { include_inactive: "true" }
+      collision = response.parsed_body["collisions"].first
+      expect(collision["linking_candidates"]).to eq(0)
+      expect(collision["candidates"].map { |c| c["reason"] }).to eq(%w[override override])
+    end
+
+    # A hand-created entry is the one place an unsafe URL can enter the
+    # catalog, and compilation drops it — so it is no one's rival.
+    it "does not count a page whose URL could never compile into a link" do
+      rival.update_columns(url: "javascript:alert(1)")
+      SitemapAutolink::Catalog.bump_version!
+
+      get "#{base}/collisions"
+      expect(response.parsed_body["collisions"]).to be_empty
+      expect(response.parsed_body["settled"]).to eq(1)
+
+      # And it is blamed on the URL rather than on the exclusion lists,
+      # which say nothing about this page.
+      get "#{base}/collisions", params: { include_inactive: "true" }
+      candidate =
+        response.parsed_body["collisions"].first["candidates"].find { |c| c["url"] != entry.url }
+      expect(candidate["reason"]).to eq("unlinkable_url")
     end
 
     it "pages and searches" do
@@ -657,6 +870,188 @@ RSpec.describe SitemapAutolinkAdminController do
 
       get "#{base}/collisions", params: { page: 3 }
       expect(response.parsed_body["collisions"]).to be_empty
+    end
+  end
+
+  describe "#resolve_collision" do
+    fab!(:rival) do
+      SitemapAutolinkEntry.create!(
+        url: "https://example.com/wiki/widget-frame-kit",
+        title: "Widget Frame Kit",
+        content_type: "wiki",
+        source: "sitemap",
+      )
+    end
+
+    before do
+      entry.terms.create!(phrase: "Widget Frame Kit", origin: :manual, state: :approved)
+      rival.terms.create!(phrase: "Widget Frame Kit", origin: :manual, state: :approved)
+      SitemapAutolink::Catalog.bump_version!
+      sign_in(admin)
+    end
+
+    it "gives the phrase to one page by disabling it on the others" do
+      before_version = SitemapAutolink::Catalog.version
+
+      post "#{base}/collisions/resolve",
+           params: {
+             phrase: "Widget Frame Kit",
+             entry_id: entry.id,
+           }
+
+      expect(response.status).to eq(200)
+      expect(response.parsed_body["disabled"]).to eq(1)
+      expect(entry.terms.first.reload.state).to eq("approved")
+      expect(rival.terms.first.reload.state).to eq("disabled")
+      expect(SitemapAutolink::Catalog.version).to be > before_version
+    end
+
+    # Only this phrase moves. Lowering the page's priority number would
+    # have handed it every other keyword it shares as well.
+    it "leaves the pages' other keywords alone" do
+      rival.terms.create!(phrase: "Gasket Set", origin: :manual, state: :approved)
+
+      post "#{base}/collisions/resolve",
+           params: {
+             phrase: "Widget Frame Kit",
+             entry_id: entry.id,
+           }
+
+      expect(rival.terms.find_by(normalized_phrase: "gasket set").state).to eq("approved")
+    end
+
+    it "approves a winner that was awaiting review" do
+      entry.terms.first.update!(state: :pending_review)
+      SitemapAutolink::Catalog.bump_version!
+
+      post "#{base}/collisions/resolve",
+           params: {
+             phrase: "Widget Frame Kit",
+             entry_id: entry.id,
+           }
+
+      expect(entry.terms.first.reload.state).to eq("approved")
+    end
+
+    # The damage this refusal prevents: handing the phrase to a page that
+    # cannot link it disabled the keyword on every page that could, so
+    # the phrase linked NOWHERE — and the old code reported that after
+    # the write had already landed.
+    it "refuses to hand the phrase to a page that is gone from the sitemap" do
+      entry.update!(removed_from_source: true)
+
+      post "#{base}/collisions/resolve",
+           params: {
+             phrase: "Widget Frame Kit",
+             entry_id: entry.id,
+           }
+
+      expect(response.status).to eq(422)
+      expect(response.parsed_body["error"]).to include("gone from the sitemap")
+      expect(rival.terms.first.reload.state).to eq("approved")
+    end
+
+    it "refuses to hand the phrase to a disabled page" do
+      entry.update!(enabled: false)
+
+      post "#{base}/collisions/resolve",
+           params: {
+             phrase: "Widget Frame Kit",
+             entry_id: entry.id,
+           }
+
+      expect(response.status).to eq(422)
+      expect(rival.terms.first.reload.state).to eq("approved")
+    end
+
+    # Nothing here outranks the setting, so the edit would disable a
+    # working keyword and change no link at all.
+    # The guard used to check two of the several reasons a page cannot
+    # link and wave the rest through, disabling every keyword that DID
+    # link and reporting success. The outcome is verified against the
+    # real compiler now, so each of these leaves the catalog untouched.
+    it "refuses when site settings rule the winning page out" do
+      SiteSetting.sitemap_autolink_enabled_types = "product"
+      SitemapAutolink::Catalog.bump_version!
+
+      post "#{base}/collisions/resolve", params: { phrase: "Widget Frame Kit", entry_id: rival.id }
+
+      expect(response.status).to eq(422)
+      expect(response.parsed_body["error"]).to include("site settings")
+      expect(entry.terms.first.reload.state).to eq("approved")
+    end
+
+    it "refuses when the winning page's URL could never become a link" do
+      rival.update_columns(url: "javascript:alert(1)")
+      SitemapAutolink::Catalog.bump_version!
+
+      post "#{base}/collisions/resolve", params: { phrase: "Widget Frame Kit", entry_id: rival.id }
+
+      expect(response.status).to eq(422)
+      expect(response.parsed_body["error"]).to include("URL cannot become a link")
+      expect(entry.terms.first.reload.state).to eq("approved")
+    end
+
+    # Being outranked by another PAGE is the one thing this action does
+    # resolve: that page's keyword is disabled, so it stops outranking
+    # anything. Only a rule the action cannot disable — a mapping in
+    # site settings — survives to refuse it.
+    it "takes the phrase from a page that outranks it, since that is the point" do
+      entry.update!(priority: -5)
+      SitemapAutolink::Catalog.bump_version!
+
+      post "#{base}/collisions/resolve", params: { phrase: "Widget Frame Kit", entry_id: rival.id }
+
+      expect(response.status).to eq(200)
+      expect(entry.terms.first.reload.state).to eq("disabled")
+      expect(rival.terms.first.reload.state).to eq("approved")
+    end
+
+    # `auto_active` is regenerated from the page title on every sync,
+    # so leaving the winner in it lets a retitle destroy the keyword
+    # while the losers stay disabled for good.
+    it "promotes the winner so a later sync cannot undo the decision" do
+      entry.terms.first.update!(state: :auto_active)
+
+      post "#{base}/collisions/resolve", params: { phrase: "Widget Frame Kit", entry_id: entry.id }
+
+      expect(response.status).to eq(200)
+      expect(entry.terms.first.reload.state).to eq("approved")
+    end
+
+    it "refuses when a manual mapping already owns the phrase" do
+      SiteSetting.sitemap_autolink_manual_mappings =
+        "Widget Frame Kit,https://example.com/zz-promo/widget-frame-kit,manual"
+      SitemapAutolink::Catalog.bump_version!
+
+      post "#{base}/collisions/resolve",
+           params: {
+             phrase: "Widget Frame Kit",
+             entry_id: entry.id,
+           }
+
+      expect(response.status).to eq(422)
+      expect(response.parsed_body["error"]).to include("sitemap_autolink_manual_mappings")
+      expect(rival.terms.first.reload.state).to eq("approved")
+    end
+
+    it "refuses a page that does not claim the phrase" do
+      other =
+        SitemapAutolinkEntry.create!(
+          url: "https://example.com/shop/gasket-set",
+          title: "Gasket Set",
+          content_type: "product",
+          source: "sitemap",
+        )
+
+      post "#{base}/collisions/resolve",
+           params: {
+             phrase: "Widget Frame Kit",
+             entry_id: other.id,
+           }
+
+      expect(response.status).to eq(404)
+      expect(rival.terms.first.reload.state).to eq("approved")
     end
   end
 
@@ -706,6 +1101,16 @@ RSpec.describe SitemapAutolinkAdminController do
       tags = body["sitemaps"].find { |s| s["url"].include?("tags") }
       # The size is the whole point of listing it before importing it.
       expect(tags["url_count"]).to eq(41_000)
+      # An index imports nothing itself, so its row reports how the
+      # decisions it created stand rather than leaving the admin to
+      # count indented rows.
+      parent = body["sitemaps"].first
+      expect(parent).to include(
+        "children" => 2,
+        "children_imported" => 1,
+        "children_pending" => 1,
+        "children_ignored" => 0,
+      )
       expect(tags["url_count_partial"]).to eq(true)
       expect(tags["status"]).to eq("pending")
     end

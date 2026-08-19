@@ -50,6 +50,23 @@ export default class AdminPluginsShowSitemapAutolinkOverviewController extends C
     };
   }
 
+  get stats() {
+    return this.status?.stats || null;
+  }
+
+  // Glimmer cannot iterate a plain object, and the type breakdown is
+  // the one figure whose keys are whatever this forum happens to have
+  // ingested. Biggest first — that is the order it gets read in.
+  get typeBreakdown() {
+    const byType = this.stats?.pages?.by_type;
+    if (!byType) {
+      return [];
+    }
+    return Object.entries(byType)
+      .map(([type, count]) => ({ type, count }))
+      .sort((a, b) => b.count - a.count);
+  }
+
   @action
   async load() {
     const [status, runs] = await Promise.all([

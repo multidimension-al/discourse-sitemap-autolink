@@ -313,4 +313,84 @@
     color: var(--primary-medium);
     overflow-wrap: anywhere;
   }
+
+  // Overview figures. A count on its own answers nothing, so each one
+  // carries its label; `--warn` marks the ones that are asking the
+  // admin for a decision.
+  &__stat-group {
+    margin-bottom: 1.25em;
+
+    h4 {
+      margin: 0 0 0.4em;
+      color: var(--primary-medium);
+      text-transform: uppercase;
+      font-size: var(--font-down-2);
+      letter-spacing: 0.05em;
+    }
+  }
+
+  &__stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75em;
+  }
+
+  &__stat {
+    display: flex;
+    flex-direction: column;
+    min-width: 7em;
+    padding: 0.6em 0.9em;
+    border: 1px solid var(--primary-low);
+    border-radius: 0.25em;
+    background: var(--primary-very-low);
+
+    &.--warn {
+      border-color: var(--highlight-medium);
+      background: var(--highlight-low);
+    }
+  }
+
+  &__stat-value {
+    font-size: var(--font-up-3);
+    font-weight: bold;
+    line-height: 1.1;
+  }
+
+  &__stat-label {
+    font-size: var(--font-down-1);
+    color: var(--primary-medium);
+  }
+
+  &__stat-breakdown {
+    margin: 0.5em 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35em;
+  }
+
+  // Sits at the end of a losing candidate's row, so the fix is where
+  // the problem is rather than on another page.
+  &__make-winner {
+    margin-left: auto;
+  }
+
+  // How the sitemaps page works, said once at the top rather than
+  // inferred from indentation and pill colours.
+  &__legend {
+    margin: 0 0 1em;
+    padding-left: 1.2em;
+    font-size: var(--font-down-1);
+    color: var(--primary-medium);
+
+    li {
+      margin-bottom: 0.2em;
+    }
+  }
+
+  &__sitemap-parent {
+    margin: 0.2em 0;
+    font-size: var(--font-down-1);
+    color: var(--primary-medium);
+    overflow-wrap: anywhere;
+  }
 }

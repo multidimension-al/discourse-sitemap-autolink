@@ -265,8 +265,16 @@ each with its own URL and its own data load. A few thousand sitemap URLs
 produce tens of thousands of keywords, so every list is paged and
 searched on the server.
 
-- **Overview** — active rule count, entry count, keywords awaiting
-  review, and configuration warnings (e.g. entries whose type isn't
+- **Overview** — where the catalog stands, in four groups of figures:
+  *pages* (live, disabled, gone from the sitemap, added by hand, total,
+  plus a per-type breakdown), *keywords* (auto-active, approved, awaiting
+  review, disabled, added by hand, total — the four states add up),
+  *linking* (how many phrases compile into a rule — including mappings
+  from site settings, which are not keywords — and how many two live
+  pages are still fighting over), and
+  *sitemaps* (importing, awaiting your decision, ignored, indexes).
+  Counts that are asking you for a decision are highlighted. Below them
+  sit the configuration warnings (e.g. entries whose type isn't
   currently allowed to link). Its actions are the ones that touch the
   sitemaps:
   - **Sync now / Cancel run** — trigger a sync; a running sync can be
@@ -281,9 +289,18 @@ searched on the server.
     content is never modified — only the rendered HTML refreshes.
 - **Sitemaps** — every sitemap the plugin has read, and which of them
   it is allowed to import. Configured sources sit at the top level with
-  the children found inside them indented beneath, each row carrying its
-  kind (index or URL list), content type, URL count and how many pages
-  it has contributed.
+  the children found inside them indented beneath and labelled with the
+  index that listed them, each row carrying its kind (index or URL
+  list), content type, URL count and how many pages it has contributed.
+  An index row imports nothing itself, so it reports the state of the
+  decisions it created instead — "lists 5 sitemaps: 2 importing, 2
+  awaiting decision, 1 ignored". A short legend at the top of the page
+  says what the three states mean, because the page is a list of
+  decisions rather than a list of files.
+
+  Indexes nest one level. A child that is itself an index is recorded
+  and labelled, not expanded — add it to `sitemap_autolink_sources` if
+  you want its children.
 
   Naming a sitemap index in settings says which sitemaps *exist*, not
   which ones belong in a link catalog — and an index routinely lists
@@ -349,27 +366,66 @@ searched on the server.
   on screen — a review queue of thousands is cleared in one confirmed
   click, and the confirmation names the exact count first. The review
   queue is this page filtered to *Awaiting review*.
-- **Conflicts** — two reports. *Duplicate keywords*: every keyword
-  claimed by more than one page, each claimant marked with whether it
-  actually links and which one wins. Detection deliberately does not
-  pre-filter to live pages — a report that silently drops disabled or
-  unreviewed claimants disagrees with the catalog you are looking at —
-  so a checkbox narrows it to the contests that change what links.
-  *Overlapping keywords*: keywords that sit inside a longer keyword.
-  "Acme Widget Kit Gasket Set" contains both "Widget Kit" and "Gasket
-  Set", so wherever the long one appears neither short one links there
-  — the answer to "why didn't my keyword fire". Detection reads the
-  whole catalog too, so a keyword still awaiting review shows up with
-  everything it swallows.
+- **Conflicts** — two reports, both listing decisions that are still
+  open rather than everything that technically collides.
+
+  *Keywords two pages want*: one keyword that two **live** pages would
+  both link. A page whose keyword is disabled, or that is switched off,
+  or that has dropped out of the sitemap, has already lost the phrase
+  and is not reported — there is nothing to decide, and at catalog
+  scale those settled cases were most of the report. **Give it this
+  page** hands the keyword to one page by disabling it on the others;
+  the edit is scoped to that one phrase, so the pages keep every other
+  keyword they own, and the Keywords page can put any of them back. It is
+  offered only on pages the change could actually help, and the result
+  is *verified* rather than predicted: the keyword is moved, the real
+  compiler is asked who owns the phrase now, and anything but the page
+  you named rolls the whole edit back with a message saying why. That
+  covers every reason a page can fail to link — disabled, gone from the
+  sitemap, ruled out by settings, an unusable URL, or simply outranked
+  — instead of the two or three anyone thinks to enumerate.
+
+  *Overlapping keywords*: a short keyword buried inside a longer one
+  **that leads somewhere else** — "Widget Kit" pointing at a
+  documentation page while "Deluxe Widget Kit" points at a shop
+  listing. Which page a post gets then depends on how much of the name
+  its author typed. Containment on its own is not reported: a page
+  titled "Deluxe Widget Kit" generates "Widget Kit" as well, and since
+  both lead to that same page the reader lands in the same place
+  whichever fires. Those pairs are counted rather than listed — ticking
+  **also show settled ones** lists them too, for when the question really
+  is "why does my short keyword never fire".
+
+  Detection still reads the whole catalog rather than the compiled
+  ruleset — a report that silently drops unreviewed keywords disagrees
+  with the catalog you are looking at — so **also show settled ones**
+  puts every claimant back on screen, each labelled with why it is out:
+  keyword disabled, keyword awaiting review, page disabled, page gone
+  from the sitemap, claimed by `sitemap_autolink_manual_mappings`, a page
+  URL that cannot become a link, or ruled out by site settings (the
+  enabled-types list, the excluded-terms list, an excluded URL pattern). That is the view for "why is *this*
+  page not linking".
+
+  A phrase the manual-mappings setting owns is not counted as a contest
+  at all: the winning rule comes from the setting, not from any page, so
+  no edit made here would change what a post links. (Admin-authored rules rank ahead of
+  generated ones by construction, not via `sitemap_autolink_type_priority`
+  — a mapping in site settings outranks a manual alias on a page, and
+  both outrank anything generated, whatever the type order says. An
+  entry given an explicit `priority` still overrides all of it; in that
+  case the page is the winner and the phrase is a contest again, which
+  is exactly right.)
 - **Logs** — every sync run with its trigger, URL counts,
   added/retitled/removed counts, result (OK, Partial, Running,
   Interrupted, Failed), timing/telemetry notes, and errors.
 
 A JSON management API (staff-only) backs all of it under
 `/admin/plugins/discourse-sitemap-autolink/` — `status`, `entries`,
-`terms`, `collisions`, `overlaps`, `runs`, `sync`, `rebake`,
-`sitemaps/list`, `sitemaps/discover` — if you prefer to script against
-it. Every list endpoint takes `page` and `q`; `entries` and `terms`
+`terms`, `collisions`, `collisions/resolve`, `overlaps`, `runs`,
+`sync`, `rebake`, `sitemaps/list`, `sitemaps/discover` — if you prefer
+to script against it. `collisions` and `overlaps` take
+`include_inactive=true` to add back what is already settled; `status`
+returns the overview figures under `stats`. Every list endpoint takes `page` and `q`; `entries` and `terms`
 also take `state` and `type`; `entries` also takes `page_state`
 (`live`, `disabled`, `removed`) and `sitemap`, and reports
 `linking_count`, `gone_pages` and `sitemaps` beside `state_counts`. The
@@ -399,7 +455,7 @@ Console tooling mirrors the page: `rake sitemap_autolink:report`,
 | `sitemap_autolink_include_private_messages` | off | Also link in personal messages. |
 | `sitemap_autolink_excluded_categories` | – | Never link in these categories (subcategories included). |
 | `sitemap_autolink_enabled_types` | – (all) | Restrict which content types may link. |
-| `sitemap_autolink_type_priority` | `manual` | Collision priority order, strongest first; unlisted types rank last. |
+| `sitemap_autolink_type_priority` | `manual` | Collision priority order for CONTENT TYPES, strongest first; unlisted types rank last. Admin-authored rules (manual mappings, manual aliases) outrank every type regardless of this list. |
 
 ### Catalog & phrases
 
@@ -547,10 +603,10 @@ previously failed title is due for its backed-off retry.
 review (approve it on the Keywords page); is its content type allowed
 by `sitemap_autolink_enabled_types`; is the post in an excluded
 category; was the keyword already used up by the per-post limits; does
-a higher-priority page own it (Conflicts → duplicate keywords); does a
-longer keyword contain it, and did that longer keyword appear too
-(Conflicts → overlapping keywords). The Overview page calls out the
-common misconfigurations.
+a higher-priority page own it (Conflicts → keywords two pages want,
+with **also show settled ones** ticked); does a longer keyword contain
+it, and did that longer keyword appear too (Conflicts → overlapping
+keywords). The Overview page calls out the common misconfigurations.
 
 **How do I undo everything?** Turn off `sitemap_autolink_enabled` and
 rebake (`rake posts:rebake`, or let posts rebake naturally). Removing
