@@ -86,7 +86,7 @@ const Owners = <template>
         @action={{@controller.search}}
         class="btn-small sitemap-autolink-admin__search-btn"
       />
-      <label class="sitemap-autolink-admin__competing-filter">
+      <label class="sitemap-autolink-admin__settled-filter">
         <input
           type="checkbox"
           checked={{@controller.includeInactive}}

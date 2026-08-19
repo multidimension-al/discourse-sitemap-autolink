@@ -135,9 +135,14 @@ export default class AdminPluginsShowSitemapAutolinkConflictsController extends 
           });
           // A resolve that would leave the phrase linking nowhere is
           // refused by the server, so anything that gets here worked.
-          this.notice = i18n("sitemap_autolink.admin.make_winner_done", {
-            count: result.disabled,
-          });
+          // "disabled on 0 other pages" is a confusing way to say the
+          // page already had it to itself.
+          this.notice =
+            result.disabled > 0
+              ? i18n("sitemap_autolink.admin.make_winner_done", {
+                  count: result.disabled,
+                })
+              : i18n("sitemap_autolink.admin.make_winner_already");
           // Resolving can empty the page being viewed; without this the
           // pager keeps reading "4 / 1" over an empty section.
           this.collisionPage = 0;

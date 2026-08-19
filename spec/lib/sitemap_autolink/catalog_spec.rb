@@ -7,6 +7,22 @@
 # generated one still compiles, just with the wrong gate and the wrong
 # rank.
 RSpec.describe SitemapAutolink::Catalog do
+  # Asserted directly as well as through the catalog, because the two
+  # forms are indistinguishable end-to-end on whichever one the adapter
+  # happens to return: a test that only goes through `database_rules`
+  # would still pass against the single-form comparison this replaced.
+  describe "SitemapAutolinkTerm.manual_origin?" do
+    it "accepts either form the adapter can hand back" do
+      expect(SitemapAutolinkTerm.manual_origin?("manual")).to eq(true)
+      expect(SitemapAutolinkTerm.manual_origin?(SitemapAutolinkTerm.origins[:manual])).to eq(true)
+      expect(SitemapAutolinkTerm.manual_origin?("generated")).to eq(false)
+      expect(SitemapAutolinkTerm.manual_origin?(SitemapAutolinkTerm.origins[:generated])).to eq(
+        false,
+      )
+      expect(SitemapAutolinkTerm.manual_origin?(nil)).to eq(false)
+    end
+  end
+
   fab!(:manual_page) do
     # Deliberately sorts AFTER the other page. Collisions are broken by
     # priority first and only then by URL, so a page that would lose an

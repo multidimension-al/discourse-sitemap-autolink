@@ -141,6 +141,11 @@ const UrlCount = <template>
 
             {{#if (eq sitemap.kind "index")}}
               <p class="sitemap-autolink-admin__sitemap-meta">
+                {{! A nested index is fetched but never expanded, so it
+                has no children and never will. Reading "no children" as
+                "not read yet" told the admin to press Read sitemaps
+                again — permanently, and beside the note saying it would
+                never change anything. }}
                 {{#if sitemap.children}}
                   <span>{{i18n
                       "sitemap_autolink.admin.index_children"
@@ -149,6 +154,10 @@ const UrlCount = <template>
                       pending=sitemap.children_pending
                       ignored=sitemap.children_ignored
                     }}</span>
+                {{else if sitemap.parent_url}}
+                  {{! index_nested below is the whole story for these }}
+                {{else if sitemap.last_fetched_at}}
+                  <span>{{i18n "sitemap_autolink.admin.index_empty"}}</span>
                 {{else}}
                   <span>{{i18n "sitemap_autolink.admin.index_unread"}}</span>
                 {{/if}}

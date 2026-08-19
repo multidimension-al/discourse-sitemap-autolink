@@ -46,12 +46,12 @@ function statusPayload(overrides = {}) {
     enabled_types_setting: "product|wiki",
     stats: {
       pages: {
-        total: 3,
-        live: 2,
+        total: 4,
+        live: 3,
         disabled: 0,
         gone: 1,
         manual: 0,
-        by_type: { product: 1, wiki: 1 },
+        by_type: { wiki: 1, product: 2 },
       },
       keywords: {
         total: 4,
@@ -205,39 +205,33 @@ function collisionsPayload() {
         linking_candidates: 2,
         candidates: [
           {
-            term_id: 11,
             entry_id: 1,
             url: "https://example.com/shop/widget-kit",
             title: "Widget Kit",
             type: "product",
             state: "auto_active",
-            page_state: "live",
             linking: true,
             reason: null,
             can_win: true,
             winner: true,
           },
           {
-            term_id: 12,
             entry_id: 2,
             url: "https://example.com/wiki/widget-kit",
             title: "Accessories: Widget Kit",
             type: "wiki",
             state: "auto_active",
-            page_state: "live",
             linking: true,
             reason: null,
             can_win: true,
             winner: false,
           },
           {
-            term_id: 13,
             entry_id: 3,
             url: "https://example.com/old/widget-kit",
             title: "Widget Kit (retired)",
             type: "wiki",
             state: "auto_active",
-            page_state: "removed",
             linking: false,
             reason: "page_gone",
             can_win: false,
@@ -265,12 +259,10 @@ function overlapsPayload() {
         linking: true,
         owners: [
           {
-            entry_id: 1,
             url: "https://example.com/shop/widget-kit",
             title: "Widget Kit",
             type: "product",
             state: "approved",
-            page_state: "live",
             linking: true,
             reason: null,
           },
@@ -281,12 +273,10 @@ function overlapsPayload() {
             linking: true,
             owners: [
               {
-                entry_id: 4,
                 url: "https://example.com/shop/acme-widget-kit-gasket-set",
                 title: "Acme Widget Kit Gasket Set",
                 type: "product",
                 state: "auto_active",
-                page_state: "live",
                 linking: true,
                 reason: null,
               },
@@ -299,12 +289,10 @@ function overlapsPayload() {
         linking: true,
         owners: [
           {
-            entry_id: null,
             url: "https://example.com/promo/widget",
             title: null,
             type: "manual",
             state: "manual_mapping",
-            page_state: null,
             linking: true,
             reason: null,
           },
@@ -315,12 +303,10 @@ function overlapsPayload() {
             linking: true,
             owners: [
               {
-                entry_id: 5,
                 url: "https://example.com/shop/deluxe-widget",
                 title: "Deluxe Widget",
                 type: "product",
                 state: "auto_active",
-                page_state: "live",
                 linking: true,
                 reason: null,
               },
@@ -333,12 +319,10 @@ function overlapsPayload() {
         linking: false,
         owners: [
           {
-            entry_id: 12,
             url: "https://example.com/wiki/gasket-set",
             title: "gasket-set",
             type: "wiki",
             state: "pending_review",
-            page_state: "live",
             linking: false,
             reason: "keyword_pending",
           },
@@ -349,12 +333,10 @@ function overlapsPayload() {
             linking: true,
             owners: [
               {
-                entry_id: 4,
                 url: "https://example.com/shop/acme-widget-kit-gasket-set",
                 title: "Acme Widget Kit Gasket Set",
                 type: "product",
                 state: "auto_active",
-                page_state: "live",
                 linking: true,
                 reason: null,
               },
@@ -1243,7 +1225,7 @@ acceptance("Sitemap Autolink | Admin | conflicts", function (needs) {
       "the default report is only what is still undecided"
     );
 
-    await click(".sitemap-autolink-admin__competing-filter input");
+    await click(".sitemap-autolink-admin__settled-filter input");
 
     assert.strictEqual(
       lastRequest("collisions").queryParams.include_inactive,
@@ -1372,7 +1354,7 @@ acceptance("Sitemap Autolink | Admin | overview and logs", function (needs) {
 
     assert
       .dom(".sitemap-autolink-admin__stat-breakdown")
-      .includesText("product", "with the per-type breakdown");
+      .hasText("product 2 wiki 1", "per-type breakdown, biggest first");
 
     assert
       .dom(".sitemap-autolink-admin__status .sitemap-autolink-admin__warning")

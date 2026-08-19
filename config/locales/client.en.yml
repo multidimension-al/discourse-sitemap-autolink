@@ -68,6 +68,7 @@ en:
         legend_discover: "“Read sitemaps” fetches the configured sitemaps and refreshes their URL counts without importing anything."
         listed_by: "listed by %{url}"
         index_children: "lists %{count} sitemaps — %{imported} importing, %{pending} awaiting decision, %{ignored} ignored"
+        index_empty: "read, but it lists no sitemaps"
         index_unread: "not read yet — use “Read sitemaps” to see what it lists"
         index_nested: "an index inside an index is not expanded; add it to sitemap_autolink_sources to use it"
         discover: "Read sitemaps"
@@ -177,6 +178,7 @@ en:
         reason_unlinkable_url: "the page URL cannot become a link"
         make_winner: "Give it this page"
         make_winner_confirm: "Give “%{phrase}” to “%{title}” and disable that keyword on every other page claiming it?"
+        make_winner_already: "That page already had the keyword to itself — nothing else claimed it."
         make_winner_done:
           one: "Done — the keyword was disabled on %{count} other page."
           other: "Done — the keyword was disabled on %{count} other pages."

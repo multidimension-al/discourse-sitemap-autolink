@@ -41,9 +41,10 @@ class SitemapAutolinkAdminController < Admin::AdminController
   # from every keyword. This caps the RESPONSE — how many pairs may be
   # listed — not the work, which is linear in total keyword length and
   # happens whatever the cap says. Pairs suppressed for pointing at the
-  # same page deliberately do not count toward it: they are the bulk of
-  # a real catalog, and counting them would trip the cap before the
-  # overlaps worth reading had been found.
+  # same page do not count toward it in the default view: they are the
+  # bulk of a real catalog, and counting them would trip the cap before
+  # the overlaps worth reading had been found. Under
+  # `include_inactive` they ARE listed, so there they do count.
   MAX_OVERLAP_PAIRS = 5000
 
   # The only reasons a candidate is out that "Give it this page" can
@@ -443,13 +444,8 @@ class SitemapAutolinkAdminController < Admin::AdminController
       SitemapAutolinkTerm
         .joins(:entry)
         .where(normalized_phrase: duplicated)
-        # NOTE: two columns named `id` here. Rails types plucked values
-        # positionally against the result columns, so the term id must
-        # stay ahead of the entry id — reordering this list would swap
-        # them silently, with nothing failing.
         .pluck(
           "sitemap_autolink_terms.normalized_phrase",
-          "sitemap_autolink_terms.id",
           "sitemap_autolink_entries.id",
           "sitemap_autolink_entries.url",
           "sitemap_autolink_entries.title",
@@ -471,7 +467,7 @@ class SitemapAutolinkAdminController < Admin::AdminController
         overridden = rule.present? && rule[:entry_id].nil?
         candidates =
           (candidates_by_phrase[phrase] || []).map do |row|
-            _p, term_id, entry_id, url, title, type, state, enabled, removed = row
+            _p, entry_id, url, title, type, state, enabled, removed = row
             name = SitemapAutolinkTerm.state_name(state)
             linking = linking_pairs.include?([phrase, entry_id]) && !overridden
             reason =
@@ -484,13 +480,11 @@ class SitemapAutolinkAdminController < Admin::AdminController
                 overridden: overridden,
               )
             {
-              term_id: term_id,
               entry_id: entry_id,
               url: url,
               title: title,
               type: type,
               state: name,
-              page_state: page_state_name(enabled, removed),
               linking: linking,
               reason: reason,
               # Whether handing it this phrase could make it link —
@@ -680,12 +674,10 @@ class SitemapAutolinkAdminController < Admin::AdminController
         overridden = phrase_owned_by_setting?(phrase)
         linking = linking_pairs.include?([phrase, entry_id]) && !overridden
         owners[phrase] << {
-          entry_id: entry_id,
           url: url,
           title: title,
           type: type,
           state: name,
-          page_state: page_state_name(enabled, removed),
           linking: linking,
           reason:
             not_linking_reason(
@@ -711,12 +703,10 @@ class SitemapAutolinkAdminController < Admin::AdminController
         rule = winners[phrase]
         [
           {
-            entry_id: nil,
             url: rule[:url],
             title: nil,
             type: rule[:type],
             state: "manual_mapping",
-            page_state: nil,
             linking: true,
             reason: nil,
           },
@@ -922,8 +912,9 @@ class SitemapAutolinkAdminController < Admin::AdminController
   # Cost: a handful of counts plus one pass over the compiled rules
   # (shared with the conflict count through the memoized
   # `linking_pairs`, so the rules are built once per request). Two of
-  # the counts — `auto_discovered` and term `origin` — have no index
-  # and are sequential scans; at catalog scale that is sub-millisecond,
+  # the counts — `auto_discovered` and term `origin` — plus the sitemap
+  # `kind` filters have no index and are sequential scans; at catalog
+  # scale that is sub-millisecond,
   # and an index existing only to serve an admin figure would cost more
   # than it saves on every write.
   #
@@ -1031,14 +1022,6 @@ class SitemapAutolinkAdminController < Admin::AdminController
   def phrase_owned_by_setting?(phrase)
     rule = compiled_winners[phrase]
     rule.present? && rule[:entry_id].nil?
-  end
-
-  # Why a page is out of the running, which is the first thing asked of
-  # a candidate that is not linking.
-  def page_state_name(enabled, removed)
-    return "removed" if removed
-    return "disabled" if !enabled
-    "live"
   end
 
   # The single reason a candidate is not linking, decided here rather

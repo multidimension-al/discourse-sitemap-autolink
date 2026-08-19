@@ -762,8 +762,8 @@ RSpec.describe SitemapAutolinkAdminController do
         [entry.url, true],
         [rival.url, false],
       )
-      expect(collision["candidates"].find { |c| c["url"] == rival.url }["page_state"]).to eq(
-        "disabled",
+      expect(collision["candidates"].find { |c| c["url"] == rival.url }["reason"]).to eq(
+        "page_disabled",
       )
     end
 
@@ -773,8 +773,8 @@ RSpec.describe SitemapAutolinkAdminController do
 
       get "#{base}/collisions", params: { include_inactive: "true" }
       collision = response.parsed_body["collisions"].first
-      expect(collision["candidates"].find { |c| c["url"] == rival.url }["page_state"]).to eq(
-        "removed",
+      expect(collision["candidates"].find { |c| c["url"] == rival.url }["reason"]).to eq(
+        "page_gone",
       )
     end
 
@@ -812,7 +812,6 @@ RSpec.describe SitemapAutolinkAdminController do
       get "#{base}/collisions", params: { include_inactive: "true" }
       candidate =
         response.parsed_body["collisions"].first["candidates"].find { |c| c["url"] == rival.url }
-      expect(candidate["page_state"]).to eq("live")
       expect(candidate["state"]).to eq("approved")
       expect(candidate["reason"]).to eq("settings")
     end
