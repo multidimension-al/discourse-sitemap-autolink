@@ -1035,6 +1035,20 @@ RSpec.describe SitemapAutolinkAdminController do
       expect(rival.terms.first.reload.state).to eq("approved")
     end
 
+    # A params value is not necessarily a scalar, and casting one
+    # straight to an integer is how malformed input becomes a 500.
+    it "answers 404 rather than erroring on a malformed entry id" do
+      post "#{base}/collisions/resolve",
+           params: {
+             phrase: "Widget Frame Kit",
+             entry_id: [entry.id, rival.id],
+           }
+
+      expect(response.status).to eq(404)
+      expect(entry.terms.first.reload.state).to eq("approved")
+      expect(rival.terms.first.reload.state).to eq("approved")
+    end
+
     it "refuses a page that does not claim the phrase" do
       other =
         SitemapAutolinkEntry.create!(

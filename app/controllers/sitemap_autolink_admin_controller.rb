@@ -535,7 +535,15 @@ class SitemapAutolinkAdminController < Admin::AdminController
   def resolve_collision
     phrase = SitemapAutolink::Matcher.normalize(params.require(:phrase).to_s)
     winner =
-      SitemapAutolinkTerm.find_by(normalized_phrase: phrase, entry_id: params[:entry_id].to_i)
+      SitemapAutolinkTerm.find_by(
+        normalized_phrase: phrase,
+        # `.to_s` first: a params value can arrive as an Array
+        # (entry_id[]=1&entry_id[]=2) or a Hash, and `Array#to_i` does
+        # not exist — casting straight to an integer turned malformed
+        # input into a 500. Through a string it degrades to 0, which
+        # matches nothing and answers 404.
+        entry_id: params[:entry_id].to_s.to_i,
+      )
     if winner.nil?
       render json: failed_json.merge(error: "that page does not claim #{phrase}"),
              status: :not_found
