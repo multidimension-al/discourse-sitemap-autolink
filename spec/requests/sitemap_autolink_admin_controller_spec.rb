@@ -992,15 +992,19 @@ RSpec.describe SitemapAutolinkAdminController do
       expect(entry.terms.first.reload.state).to eq("approved")
     end
 
-    it "refuses when another page outranks the one being named" do
+    # Being outranked by another PAGE is the one thing this action does
+    # resolve: that page's keyword is disabled, so it stops outranking
+    # anything. Only a rule the action cannot disable — a mapping in
+    # site settings — survives to refuse it.
+    it "takes the phrase from a page that outranks it, since that is the point" do
       entry.update!(priority: -5)
       SitemapAutolink::Catalog.bump_version!
 
       post "#{base}/collisions/resolve", params: { phrase: "Widget Frame Kit", entry_id: rival.id }
 
-      expect(response.status).to eq(422)
-      expect(response.parsed_body["error"]).to include("outranks")
-      expect(entry.terms.first.reload.state).to eq("approved")
+      expect(response.status).to eq(200)
+      expect(entry.terms.first.reload.state).to eq("disabled")
+      expect(rival.terms.first.reload.state).to eq("approved")
     end
 
     # `auto_active` is regenerated from the page title on every sync,

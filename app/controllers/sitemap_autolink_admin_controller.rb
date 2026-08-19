@@ -629,6 +629,10 @@ class SitemapAutolinkAdminController < Admin::AdminController
           "would change no link. Edit that setting instead. Nothing was changed."
       )
     end
+    # A backstop. Every page claiming the phrase is disabled by this
+    # action, so a page cannot still outrank the winner afterwards —
+    # but the check is on the compiler's answer, not on that reasoning,
+    # so it stays correct if the ranking rules ever change.
     "#{outcome[:url]} outranks #{entry.url} for \"#{phrase}\", so this would change no link. " \
       "Give that page a weaker priority first. Nothing was changed."
   end
