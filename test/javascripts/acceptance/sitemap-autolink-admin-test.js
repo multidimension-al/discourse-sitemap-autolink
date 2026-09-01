@@ -5,11 +5,13 @@ import { i18n } from "discourse-i18n";
 
 const PLUGIN_ID = "discourse-sitemap-autolink";
 const BASE = `/admin/plugins/${PLUGIN_ID}`;
-const OVERVIEW = `${BASE}/overview`;
-const SITEMAPS = `${BASE}/sitemaps`;
-const KEYWORDS = `${BASE}/keywords`;
-const CONFLICTS = `${BASE}/conflicts`;
-const LOGS = `${BASE}/logs`;
+// Paths are prefixed: /admin/plugins/:plugin_id/* is one namespace shared by
+// every installed plugin, so a bare "logs" or "overview" is a site-wide claim.
+const OVERVIEW = `${BASE}/autolink-overview`;
+const SITEMAPS = `${BASE}/autolink-sitemaps`;
+const KEYWORDS = `${BASE}/autolink-keywords`;
+const CONFLICTS = `${BASE}/autolink-conflicts`;
+const LOGS = `${BASE}/autolink-logs`;
 
 function pluginPayload() {
   return {
@@ -539,13 +541,13 @@ acceptance("Sitemap Autolink | Admin | navigation", function (needs) {
     ["overview", "sitemaps", "keywords", "conflicts", "logs"].forEach(
       (page) => {
         assert
-          .dom(`${nav}[href="${BASE}/${page}"]`)
+          .dom(`${nav}[href="${BASE}/autolink-${page}"]`)
           .hasText(i18n(`sitemap_autolink.admin.nav.${page}`));
       }
     );
 
     assert
-      .dom(`${nav}[href="${BASE}/catalog"]`)
+      .dom(`${nav}[href="${BASE}/autolink-catalog"]`)
       .doesNotExist("the single Catalog page it replaced is gone");
   });
 
@@ -571,8 +573,8 @@ acceptance("Sitemap Autolink | Admin | navigation", function (needs) {
     assert.dom(".sitemap-autolink-admin__collision").exists();
   });
 
-  test("the old catalog URL still works", async function (assert) {
-    await visit(`${BASE}/catalog`);
+  test("the catalog URL still works", async function (assert) {
+    await visit(`${BASE}/autolink-catalog`);
 
     assert.strictEqual(
       currentURL(),

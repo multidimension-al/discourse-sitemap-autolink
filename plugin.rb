@@ -67,7 +67,17 @@ after_initialize do
     # URL needs an explicit Rails route rendering the app shell (same
     # pattern as discourse-subscriptions). "catalog" is the single page
     # these four replaced; its Ember route redirects to the overview.
-    %w[overview sitemaps keywords conflicts logs catalog].each do |page|
+    # Paths are prefixed to keep them out of the shared
+    # /admin/plugins/:plugin_id/* namespace, where a bare word like "logs" is
+    # claimed site-wide and collides with any other plugin using it.
+    %w[
+      autolink-overview
+      autolink-sitemaps
+      autolink-keywords
+      autolink-conflicts
+      autolink-logs
+      autolink-catalog
+    ].each do |page|
       get "/admin/plugins/discourse-sitemap-autolink/#{page}" => "admin/plugins#index",
           :constraints => StaffConstraint.new
     end
