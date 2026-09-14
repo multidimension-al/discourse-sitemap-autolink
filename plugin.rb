@@ -6,6 +6,7 @@
 # authors: multidimension.al
 # url: https://github.com/multidimension-al/discourse-sitemap-autolink
 # required_version: 3.4.0
+# meta_topic_id: 410169
 
 enabled_site_setting :sitemap_autolink_enabled
 
