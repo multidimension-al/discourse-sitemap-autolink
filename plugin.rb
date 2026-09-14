@@ -3,7 +3,7 @@
 # name: discourse-sitemap-autolink
 # about: Automatically links the first mention of your site's pages (products, wiki articles, docs, …) in posts, driven by a sitemap-synced server-side catalog.
 # version: 1.0.0
-# authors: AJ Quick
+# authors: multidimension.al
 # url: https://github.com/multidimension-al/discourse-sitemap-autolink
 # required_version: 3.4.0
 
